@@ -1,0 +1,11 @@
+{
+  "orgName": "OpenBox Package Test",
+  "edition": "Developer",
+  "features": ["EnableSetPasswordInApi", "Einstein1AIPlatform"],
+  "settings": {
+    "lightningExperienceSettings": { "enableS1DesktopEnabled": true },
+    "einsteinGptSettings": { "enableEinsteinGptPlatform": true },
+    "botSettings": { "enableBots": true },
+    "agentPlatformSettings": { "enableAgentPlatform": true }
+  }
+}

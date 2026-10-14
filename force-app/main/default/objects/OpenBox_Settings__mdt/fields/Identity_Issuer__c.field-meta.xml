@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Identity_Issuer__c</fullName>
+    <description>The only issuer Salesforce trusts for workload tokens. A Core bootstrap naming any other issuer is refused.</description>
+    <label>Identity Issuer</label>
+    <length>255</length>
+    <required>false</required>
+    <type>Text</type>
+    <fieldManageability>SubscriberControlled</fieldManageability>
+</CustomField>

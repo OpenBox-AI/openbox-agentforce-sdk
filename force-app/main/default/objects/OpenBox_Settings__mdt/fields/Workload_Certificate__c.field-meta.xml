@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Workload_Certificate__c</fullName>
+    <description>Salesforce certificate whose non-exportable private key signs the workload client assertion.</description>
+    <label>Workload Certificate</label>
+    <length>80</length>
+    <required>false</required>
+    <type>Text</type>
+    <fieldManageability>SubscriberControlled</fieldManageability>
+</CustomField>

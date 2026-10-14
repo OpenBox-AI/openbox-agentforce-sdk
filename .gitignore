@@ -1,0 +1,19 @@
+# Secrets and per-org settings (see .env.example)
+.env
+.env.*
+!.env.example
+
+# Salesforce CLI state
+.sf/
+.sfdx/
+
+# Local output
+out/
+node_modules/
+*.log
+
+# OS and editor files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

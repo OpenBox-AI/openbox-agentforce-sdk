@@ -1,0 +1,9 @@
+{
+    "printWidth": 120,
+    "tabWidth": 4,
+    "trailingComma": "none",
+    "overrides": [
+        { "files": "**/*.{cls,trigger}", "options": { "parser": "apex" } },
+        { "files": "**/*.mjs", "options": { "tabWidth": 2, "singleQuote": true, "trailingComma": "all" } }
+    ]
+}

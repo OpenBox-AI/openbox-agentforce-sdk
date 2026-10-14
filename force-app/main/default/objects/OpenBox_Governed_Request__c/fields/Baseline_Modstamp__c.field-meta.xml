@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Baseline_Modstamp__c</fullName>
+    <description>Opportunity SystemModstamp captured at authorization. A different value at approval resolution marks the request stale.</description>
+    <label>Baseline Modstamp</label>
+    <required>false</required>
+    <type>DateTime</type>
+</CustomField>

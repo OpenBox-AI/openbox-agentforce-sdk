@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomPermission xmlns="http://soap.sforce.com/2006/04/metadata">
+    <description>Allows a human administrator to edit Opportunity.Discount__c outside the OpenBox governed action. Never assign to agent users.</description>
+    <isLicensed>false</isLicensed>
+    <label>OpenBox Discount Direct Edit</label>
+</CustomPermission>

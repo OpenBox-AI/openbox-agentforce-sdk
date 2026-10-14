@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<RemoteSiteSetting xmlns="http://soap.sforce.com/2006/04/metadata">
+    <description>OpenBox identity provider (Keycloak). Apex sends it only the agent's signed client assertion, and only to the token endpoint of the issuer pinned in OpenBox_Settings__mdt.Identity_Issuer__c.</description>
+    <disableProtocolSecurity>false</disableProtocolSecurity>
+    <isActive>true</isActive>
+    <url>https://identity.openbox.ai</url>
+</RemoteSiteSetting>

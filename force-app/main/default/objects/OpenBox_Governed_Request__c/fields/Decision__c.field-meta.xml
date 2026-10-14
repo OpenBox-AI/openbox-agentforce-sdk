@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Decision__c</fullName>
+    <label>Decision</label>
+    <required>false</required>
+    <valueSet>
+        <restricted>true</restricted>
+        <valueSetDefinition>
+            <sorted>false</sorted>
+            <value>
+                <fullName>ALLOW</fullName>
+                <default>false</default>
+                <label>ALLOW</label>
+            </value>
+            <value>
+                <fullName>REQUIRE_APPROVAL</fullName>
+                <default>false</default>
+                <label>REQUIRE APPROVAL</label>
+            </value>
+            <value>
+                <fullName>BLOCK</fullName>
+                <default>false</default>
+                <label>BLOCK</label>
+            </value>
+            <value>
+                <fullName>HALT</fullName>
+                <default>false</default>
+                <label>HALT</label>
+            </value>
+            <value>
+                <fullName>ERROR</fullName>
+                <default>false</default>
+                <label>ERROR</label>
+            </value>
+        </valueSetDefinition>
+    </valueSet>
+    <type>Picklist</type>
+</CustomField>

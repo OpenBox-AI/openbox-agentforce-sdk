@@ -1,0 +1,185 @@
+OPENBOX x SALESFORCE AGENTFORCE
+Governed discount changes, decided by OpenBox before anything is written
+=========================================================================
+
+WHAT WE ARE BUILDING
+
+Sales teams want Agentforce to handle routine requests like "give Acme a 10%
+discount on the renewal". The risk is obvious: an agent that can edit
+Opportunity records can also give away margin nobody signed off on.
+
+This integration puts OpenBox in front of that one sensitive write. When the
+agent wants to change an Opportunity discount, Salesforce asks OpenBox first.
+OpenBox answers with one of four decisions, and Salesforce enforces it:
+
+  ALLOW             The change is applied, once, after Salesforce re-checks the
+                    record and the user's access.
+  REQUIRE_APPROVAL  Nothing changes yet. A person approves or rejects it in
+                    OpenBox, and Salesforce applies it later only if approved.
+  BLOCK             Nothing changes. The agent tells the user why.
+  HALT              Nothing changes, and OpenBox ends the agent's session.
+
+If OpenBox can't be reached, or answers with something we don't understand,
+nothing changes. A missing answer is never treated as a yes.
+
+Everything runs inside Salesforce: an Apex action calls OpenBox directly. No
+middleware, no gateway, no extra service to host. It is the OpenBox SDK for
+Salesforce, shipped as a Salesforce package that customers install in their
+own org and wire into their own Agentforce agent.
+
+
+WHY IT HOLDS UP
+
+- The agent user can read Discount__c but has no permission to edit it. A
+  trigger also rejects any Discount__c change that doesn't come through the
+  governed action. Telling the agent "please behave" is not the control.
+- No shared secrets in code. The OpenBox API key sits in a Named Credential
+  that Apex cannot read. The agent proves its identity with a short-lived
+  token, obtained with a JWT signed by a Salesforce certificate whose private
+  key cannot be exported.
+- OpenBox and Salesforce both have to agree. An OpenBox ALLOW doesn't help if
+  the requesting user lacks access to the record.
+- Approvals never keep a transaction waiting. A pending request is stored,
+  then picked up in a separate transaction once a human decides. It is locked
+  while it runs, so a replayed approval can only change the record once.
+- If someone edits the Opportunity while the request waits for approval, the
+  request is marked stale and dropped.
+- Every step is recorded in Salesforce, and the same run shows up in OpenBox
+  with paired events and spans.
+
+
+C4 LEVEL 1 - SYSTEM CONTEXT
+
+   +------------------+                          +----------------------+
+   |    Sales rep     |  "Give Acme 10% off"     |  Sales-ops approver  |
+   |    [Person]      |                          |       [Person]       |
+   +--------+---------+                          +----------+-----------+
+            | chats with                                    | approves or rejects
+            v                                               v  in the dashboard
+   +---------------------------------+  "may I?"  +---------------------------+
+   |  Salesforce org with Agentforce | ---------> |  OpenBox                  |
+   |  [Software system]              | <--------- |  [Software system]        |
+   |  Agent, governed Apex action,   |  decision  |  Policies, guardrails,    |
+   |  Opportunity data, audit trail  |            |  behaviour rules,         |
+   +---------------------------------+            |  approvals, session audit |
+                                                  +---------------------------+
+
+
+C4 LEVEL 2 - CONTAINERS
+
+  Salesforce org
+  +---------------------------------------------------------------------------+
+  |                                                                           |
+  |  +-----------------------+   invokes   +-------------------------------+  |
+  |  | OpenBox Sales Agent   | ----------> | Governed Apex actions         |  |
+  |  | [Agentforce, Agent    |             | [Apex @InvocableMethod]       |  |
+  |  |  Script]              |             | Find Opportunity              |  |
+  |  | Runs as a dedicated   |             | Update Discount (governed)    |  |
+  |  | least-privilege user  |             | Check Discount Approval       |  |
+  |  +-----------------------+             +---------------+---------------+  |
+  |                                                        |                  |
+  |       +--------------------------+---------------------+----------+       |
+  |       | reads / writes           | records                        |       |
+  |       v                          v                                |       |
+  |  +-------------------+   +-----------------------------------+    |       |
+  |  | Opportunity       |   | Governance records                |    |       |
+  |  | Discount__c       |   | [Custom objects]                  |    |       |
+  |  | + guard trigger   |   | Governed Request (pending/done)   |    |       |
+  |  +-------------------+   | Audit trail                       |    |       |
+  |                          | Event outbox                      |    |       |
+  |                          +-----------------+-----------------+    |       |
+  |                                            | drained by           |       |
+  |                                            v                      |       |
+  |                          +-----------------------------------+    |       |
+  |                          | Background jobs [Queueable Apex]  |    |       |
+  |                          | Approval poller, outbox sender    |    |       |
+  |                          +-----------------+-----------------+    |       |
+  |                                            |                      |       |
+  |                          +-----------------v----------------------v--+    |
+  |                          | Named Credential "OpenBox_Core"           |    |
+  |                          | holds the agent key; Apex never sees it   |    |
+  |                          | Certificate "OpenBox_Workload"            |    |
+  |                          | signs identity JWTs; key not exportable   |    |
+  |                          +---------------------+---------------------+    |
+  +------------------------------------------------|--------------------------+
+                                                   | HTTPS, JSON
+                                                   v
+  OpenBox                                 +----------------------------------+
+                                          | Identity   signed JWT -> token   |
+                                          +----------------+-----------------+
+                                          | Core   /api/v3/governance/...    |
+                                          | evaluate, approval               |
+                                          +----------------+-----------------+
+                                                           |
+                                          +----------------v-----------------+
+                                          | Platform + dashboard             |
+                                          | sessions, approvals, controls    |
+                                          +----------------------------------+
+
+
+C4 LEVEL 3 - INSIDE THE GOVERNED ACTION (the parts that matter)
+
+  OpenBox_GovernedDiscountUpdate        what Agentforce calls
+    -> OpenBoxDiscountGovernance        decides first (callouts only), then
+                                        writes everything in one commit step
+       -> OpenBoxGovernedRun            keeps the OpenBox event order and makes
+                                        sure every "started" gets its "completed"
+          -> OpenBoxEvents/OpenBoxSpan  build the exact payloads OpenBox's own
+                                        SDKs send
+          -> OpenBoxClient              HTTPS to Core, fails closed
+             -> OpenBoxWorkloadIdentity signs a JWT with the org's
+                                        certificate, swaps it for a
+                                        5-minute workload token
+       -> OpenBoxAccess                 Salesforce-side permission checks
+       -> OpenBoxOutbox + Dispatcher    sends post-write events (Apex can't
+                                        call out after it writes data)
+
+
+WHAT ONE REQUEST LOOKS LIKE IN OPENBOX
+
+  WorkflowStarted                         the user's request is the goal
+  SignalReceived      user_prompt
+  ActivityStarted     OpportunityLookup
+     span  SELECT Opportunity             started -> completed
+  ActivityCompleted   OpportunityLookup   PII in the record is masked here
+  ActivityStarted     OpportunityDiscountUpdate    <- the policy decides here
+     span  SELECT ... FOR UPDATE          started -> completed (locked re-read)
+     span  UPDATE Opportunity             started -> write -> completed
+  ActivityCompleted   OpportunityDiscountUpdate
+  WorkflowCompleted
+
+
+THE RULES WE SHIP WITH (edited in the OpenBox dashboard, no redeploy)
+
+  Policy        up to 15% allowed, 15-40% needs approval, over 40% blocked,
+                90% or more halts the session, closed deals are blocked
+  Guardrails    mask personal data in the justification and in the record
+                description; block justifications like "bypass approval"
+  Behaviour     no discount write without a fresh locked read of the record;
+                deals in Negotiation/Review need a sales-ops sign-off
+
+
+HOW A CUSTOMER INSTALLS IT
+
+- Create the agent in OpenBox and copy its API key.
+- Install the OpenBox package in Salesforce: the SDK, the governed actions,
+  the guard trigger, the credentials, the governance objects and two
+  permission sets.
+- Create the certificate OpenBox_Workload in Setup (2048-bit, private key not
+  exportable) and register its public key on the OpenBox agent.
+- Paste the API key into the OpenBox Core Auth credential and check the
+  OpenBox endpoints.
+- Give the agent user the OpenBox Governed Agent permission set and sales ops
+  the OpenBox Governance Admin set.
+- In Agent Builder, add Find Opportunity, Update Opportunity Discount (OpenBox
+  Governed) and Check Discount Approval to the agent, remove any other way to
+  edit the discount, then activate.
+
+
+WHERE IT STANDS
+
+- Version 1.0.0 is an unlocked Salesforce package, installed in a fresh
+  Developer org and tested end to end through the agent chat against
+  OpenBox staging.
+- Next: a managed package under an OpenBox namespace and the Salesforce
+  security review, to list it on AgentExchange.

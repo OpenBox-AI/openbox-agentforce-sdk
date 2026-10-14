@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Actor__c</fullName>
+    <label>Actor</label>
+    <deleteConstraint>SetNull</deleteConstraint>
+    <referenceTo>User</referenceTo>
+    <relationshipLabel>OpenBox Governance Audits</relationshipLabel>
+    <relationshipName>OpenBox_Governance_Audits</relationshipName>
+    <required>false</required>
+    <type>Lookup</type>
+</CustomField>
