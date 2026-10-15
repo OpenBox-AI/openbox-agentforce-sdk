@@ -30,6 +30,9 @@ public inherited sharing class OpenBoxGovernedRun {
     private Boolean deferred = false;
     private Boolean halted = false;
     private Boolean finished = false;
+    // An attached run is one step of a longer conversation: finishing it closes its activities but
+    // leaves the workflow open for the next message. Only a HALT or endConversation() ends it.
+    private Boolean attached = false;
 
     /**
      * Handle for one governed activity. activityId is shared by its Started and Completed events,
@@ -96,6 +99,37 @@ public inherited sharing class OpenBoxGovernedRun {
     }
 
     /**
+     * Joins a conversation-wide run (one OpenBox session per agent conversation) from a later
+     * transaction. Like resume(), but finish() leaves the workflow open: the conversation goes on
+     * after this step, and it is ended by a HALT or by endConversation().
+     */
+    public static OpenBoxGovernedRun attach(
+        OpenBoxClient client,
+        OpenBoxEvents.Identity identity,
+        String traceId,
+        Datetime startedAt
+    ) {
+        OpenBoxGovernedRun run = new OpenBoxGovernedRun(client, identity, traceId, startedAt);
+        run.attached = true;
+        return run;
+    }
+
+    /**
+     * Starts a conversation-wide run: sends WorkflowStarted like start(), and finish() then
+     * leaves the workflow open like attach().
+     */
+    public static OpenBoxGovernedRun startConversation(
+        OpenBoxClient client,
+        OpenBoxEvents.Identity identity,
+        Map<String, Object> input,
+        String goal
+    ) {
+        OpenBoxGovernedRun run = start(client, identity, input, goal);
+        run.attached = true;
+        return run;
+    }
+
+    /**
      * Re-attaches to an activity whose ActivityStarted was sent in an earlier transaction.
      */
     public Activity resumeActivity(String activityId, String activityType, Datetime activityStartedAt) {
@@ -111,6 +145,29 @@ public inherited sharing class OpenBoxGovernedRun {
         emitTelemetry(
             OpenBoxEvents.signalReceived(identity, OpenBoxEvents.SIGNAL_USER_PROMPT, new List<Object>{ prompt })
         );
+    }
+
+    /**
+     * Sends a signal and waits for its verdict, as the OpenBox SDKs do for the user prompt: policies
+     * and input guardrails on SignalReceived can refuse the message before the agent acts on it.
+     */
+    public OpenBoxEvaluationResult decideSignal(String signalName, List<Object> signalArgs, String activityId) {
+        assertActive();
+        OpenBoxEvaluationResult result = decide(
+            OpenBoxEvents.signalReceived(identity, signalName, signalArgs, activityId)
+        );
+        recordHalt(result);
+        return result;
+    }
+
+    /**
+     * Sends an informational signal. Never raises; a failed send is queued like any telemetry.
+     */
+    public void signal(String signalName, List<Object> signalArgs, String activityId) {
+        if (halted) {
+            return;
+        }
+        emitTelemetry(OpenBoxEvents.signalReceived(identity, signalName, signalArgs, activityId));
     }
 
     public Activity newActivity(String activityType) {
@@ -200,6 +257,10 @@ public inherited sharing class OpenBoxGovernedRun {
                 failActivity(activity, 'ActivityAbandoned', 'Run ended before the activity completed', null);
             }
         }
+        if (attached) {
+            // One step of a conversation is over; the run itself stays open until endConversation().
+            return;
+        }
         Map<String, Object> error = succeeded ? null : OpenBoxEvents.error(errorType, errorMessage);
         emitTelemetry(
             OpenBoxEvents.workflowCompleted(
@@ -211,6 +272,19 @@ public inherited sharing class OpenBoxGovernedRun {
             )
         );
         finished = true;
+    }
+
+    /**
+     * Ends a conversation-wide run with WorkflowCompleted (or WorkflowFailed), closing anything
+     * still open. Used when a conversation goes idle.
+     */
+    public void endConversation(Boolean succeeded, Object output, String errorType, String errorMessage) {
+        attached = false;
+        finish(succeeded, output, errorType, errorMessage);
+    }
+
+    public Boolean isAttached() {
+        return attached;
     }
 
     /**

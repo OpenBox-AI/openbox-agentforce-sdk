@@ -101,6 +101,8 @@ public without sharing class OpenBoxDiscountGovernance {
         Opportunity pendingWrite;
         String opportunityName;
         Boolean resumed = false;
+        // Set when the request is one step of a governed agent conversation.
+        OpenBoxAgentSession conversation;
 
         Plan(OpenBox_Governed_Request__c record, Id actorId) {
             this.record = record;
@@ -202,9 +204,11 @@ public without sharing class OpenBoxDiscountGovernance {
                 Approval_Expires_At__c,
                 Poll_Count__c,
                 Next_Event_Sequence__c,
+                Agent_Session__c,
+                Agent_Session__r.Status__c,
                 CreatedDate
             FROM OpenBox_Governed_Request__c
-            WHERE Id IN :requestIds AND Status__c = :STATUS_PENDING
+            WHERE Id IN :requestIds AND Status__c = :STATUS_PENDING AND Tool_Name__c = NULL
             FOR UPDATE
         ]) {
             if (plans.size() >= settings.maxRequestsPerTransaction) {
@@ -269,25 +273,45 @@ public without sharing class OpenBoxDiscountGovernance {
             return;
         }
 
-        OpenBoxEvents.Identity identity = new OpenBoxEvents.Identity(
-            'salesforce-' + UserInfo.getOrganizationId() + '-' + plan.record.Request_Id__c,
-            plan.record.Request_Id__c,
-            settings.workflowType,
-            settings.taskQueue,
-            settings.agentName,
-            plan.record.Agent_Session_Id__c
-        );
-        plan.record.Workflow_Id__c = identity.workflowId;
-        plan.record.Run_Id__c = identity.runId;
+        // Part of a governed conversation: the request is one more step of that OpenBox session,
+        // whose user message was already governed. Otherwise it is an OpenBox session of its own.
+        plan.conversation = OpenBoxAgentSession.findExisting(request.agentSessionId);
+        if (plan.conversation != null && plan.conversation.isHalted()) {
+            plan.conclude(
+                STATUS_HALTED,
+                'OpenBox ended this conversation earlier',
+                'OpenBox ended this conversation, so nothing more can be changed in it. Please start a new conversation.'
+            );
+            plan.audit(OpenBoxAudit.STAGE_AUTHORIZATION, 'Halted', null, null);
+            return;
+        }
 
         try {
-            plan.run = OpenBoxGovernedRun.start(client, identity, workflowInput(plan, request), goalOf(request));
+            if (plan.conversation != null) {
+                plan.run = plan.conversation.join(client, settings, goalOf(request));
+                plan.record.Workflow_Id__c = plan.conversation.record.Workflow_Id__c;
+                plan.record.Run_Id__c = plan.conversation.record.Run_Id__c;
+            } else {
+                OpenBoxEvents.Identity identity = new OpenBoxEvents.Identity(
+                    'salesforce-' + UserInfo.getOrganizationId() + '-' + plan.record.Request_Id__c,
+                    plan.record.Request_Id__c,
+                    settings.workflowType,
+                    settings.taskQueue,
+                    settings.agentName,
+                    plan.record.Agent_Session_Id__c
+                );
+                plan.record.Workflow_Id__c = identity.workflowId;
+                plan.record.Run_Id__c = identity.runId;
+                plan.run = OpenBoxGovernedRun.start(client, identity, workflowInput(plan, request), goalOf(request));
+            }
             plan.record.Trace_Id__c = plan.run.traceId;
             if (plan.run.isHalted()) {
                 stopRun(plan, null, haltResult('Session halted by OpenBox at start'), OpenBoxAudit.STAGE_AUTHORIZATION);
                 return;
             }
-            plan.run.signalUserPrompt(abbreviate(request.userPrompt, MAX_PROMPT_CHARS));
+            if (plan.conversation == null) {
+                plan.run.signalUserPrompt(abbreviate(request.userPrompt, MAX_PROMPT_CHARS));
+            }
 
             Opportunity current = lookup(plan);
             if (current == null) {
@@ -460,8 +484,21 @@ public without sharing class OpenBoxDiscountGovernance {
             settings.agentName,
             record.Agent_Session_Id__c
         );
-        plan.run = OpenBoxGovernedRun.resume(client, identity, record.Trace_Id__c, record.CreatedDate);
+        // A request that is a step of a conversation must not end the conversation's workflow.
+        plan.run = record.Agent_Session__c == null
+            ? OpenBoxGovernedRun.resume(client, identity, record.Trace_Id__c, record.CreatedDate)
+            : OpenBoxGovernedRun.attach(client, identity, record.Trace_Id__c, record.CreatedDate);
         plan.updateActivity = plan.run.resumeActivity(record.Activity_Id__c, ACTIVITY_UPDATE, record.CreatedDate);
+        if (record.Agent_Session__r?.Status__c == OpenBoxAgentSession.STATUS_HALTED) {
+            record.Decided_At__c = Datetime.now();
+            plan.conclude(
+                STATUS_HALTED,
+                'OpenBox ended this conversation before the request was applied',
+                'OpenBox ended this conversation, so the discount was not changed.'
+            );
+            plan.audit(OpenBoxAudit.STAGE_APPROVAL, 'Halted', null, null);
+            return;
+        }
 
         OpenBoxApprovalResult approval;
         try {
@@ -723,11 +760,25 @@ public without sharing class OpenBoxDiscountGovernance {
         }
         List<OpenBox_Governed_Request__c> records = new List<OpenBox_Governed_Request__c>();
         for (Plan plan : plans) {
+            if (plan.conversation != null) {
+                if (plan.run != null && plan.run.isHalted()) {
+                    plan.conversation.markHalted();
+                }
+                plan.conversation.save();
+                plan.record.Agent_Session__c = plan.conversation.record.Id;
+            }
             records.add(plan.record);
+        }
+        // Events of a resumed conversation step leave through the outbox from here on: this phase writes.
+        for (Plan plan : plans) {
+            if (plan.resumed && plan.run != null && plan.run.isAttached()) {
+                plan.run.deferRemainingEvents();
+            }
         }
         upsert records;
 
         applyWrites(plans);
+        closeFinishedTurns(plans);
 
         List<OpenBox_Governance_Audit__c> audits = new List<OpenBox_Governance_Audit__c>();
         List<OpenBox_Event_Outbox__c> outbox = new List<OpenBox_Event_Outbox__c>();
@@ -735,6 +786,9 @@ public without sharing class OpenBoxDiscountGovernance {
         Boolean pendingApprovals = false;
         for (Plan plan : plans) {
             requestIds.put(plan.record.Request_Id__c, plan.record.Id);
+            for (OpenBox_Governance_Audit__c entry : plan.audits) {
+                entry.Agent_Session__c = plan.record.Agent_Session__c;
+            }
             audits.addAll(plan.audits);
             if (plan.run != null) {
                 outbox.addAll(OpenBoxOutbox.stage(plan.record, plan.run.drainDeferredEvents()));
@@ -841,6 +895,36 @@ public without sharing class OpenBoxDiscountGovernance {
             } else {
                 recordWriteFailure(plan, 'DmlException', describeErrors(result.getErrors()));
             }
+        }
+    }
+
+    /**
+     * A conversation turn that ended while this request waited for a human was left open; once its
+     * last waiting call is resolved, the turn's run is closed with WorkflowCompleted.
+     */
+    private static void closeFinishedTurns(List<Plan> plans) {
+        Set<Id> resolved = new Set<Id>();
+        for (Plan plan : plans) {
+            if (plan.resumed && plan.record.Status__c != STATUS_PENDING) {
+                resolved.add(plan.record.Id);
+            }
+        }
+        Set<String> closedRuns = new Set<String>();
+        for (Plan plan : plans) {
+            OpenBox_Governed_Request__c record = plan.record;
+            if (
+                !resolved.contains(record.Id) ||
+                plan.run == null ||
+                !plan.run.isAttached() ||
+                plan.run.isHalted() ||
+                closedRuns.contains(record.Run_Id__c) ||
+                !OpenBoxAgentSession.runIsOver(record.Agent_Session__c, record.Run_Id__c, resolved)
+            ) {
+                continue;
+            }
+            Boolean succeeded = record.Status__c == STATUS_EXECUTED;
+            plan.run.endConversation(succeeded, null, succeeded ? null : record.Status__c, succeeded ? null : record.Reason__c);
+            closedRuns.add(record.Run_Id__c);
         }
     }
 

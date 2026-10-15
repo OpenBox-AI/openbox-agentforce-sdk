@@ -130,7 +130,8 @@ private class OpenBoxActionsTest {
     static void scheduledPollerQueuesResolver() {
         Test.startTest();
         new OpenBoxApprovalPollerSchedule().execute((SchedulableContext) null);
-        Assert.areEqual(1, Limits.getQueueableJobs());
+        // The approval poller and the idle-conversation closer.
+        Assert.areEqual(2, Limits.getQueueableJobs());
         Test.stopTest();
     }
 

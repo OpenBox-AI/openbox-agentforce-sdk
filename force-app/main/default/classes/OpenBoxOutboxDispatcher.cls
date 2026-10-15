@@ -2,8 +2,9 @@
  * Delivers queued OpenBox outbox events in per-request sequence order.
  *
  * Delivery rules:
- *  - events of one request are sent strictly in sequence; a failed event holds back every later
- *    event of the same request until it is delivered or exhausts its attempts;
+ *  - events of one request (or, for conversation-level events, of one conversation) are sent
+ *    strictly in sequence; a failed event holds back every later event of the same group until it
+ *    is delivered or exhausts its attempts;
  *  - an event that exhausts OpenBox_Settings__mdt.Outbox_Max_Attempts__c is marked Failed so its
  *    successors can still close the run in Core;
  *  - Core answers events for a session it has already closed (after a HALT) with a halt verdict and
@@ -44,7 +45,7 @@ public inherited sharing class OpenBoxOutboxDispatcher implements Queueable, Dat
 
         for (OpenBox_Event_Outbox__c row : queued) {
             if (
-                blockedRequests.contains(row.Governed_Request__c) ||
+                blockedRequests.contains(groupOf(row)) ||
                 OpenBoxClient.remainingCallouts() <= CALLOUT_RESERVE + OpenBoxWorkloadIdentity.pendingCallouts()
             ) {
                 workRemains = true;
@@ -62,24 +63,24 @@ public inherited sharing class OpenBoxOutboxDispatcher implements Queueable, Dat
                 row.Sent_At__c = Datetime.now();
                 row.Last_Error__c = refused ? result.reason : null;
                 if (result.guardrailsPassed == false) {
-                    audits.add(
-                        OpenBoxAudit.entry(
-                            row.Governed_Request__r.Request_Id__c,
-                            OpenBoxAudit.STAGE_TELEMETRY,
-                            'Guardrail_Violation',
-                            result,
-                            null,
-                            null,
-                            new Map<String, Object>{ 'event' => row.Event_Type__c }
-                        )
+                    OpenBox_Governance_Audit__c audit = OpenBoxAudit.entry(
+                        row.Governed_Request__r.Request_Id__c,
+                        OpenBoxAudit.STAGE_TELEMETRY,
+                        'Guardrail_Violation',
+                        result,
+                        null,
+                        null,
+                        new Map<String, Object>{ 'event' => row.Event_Type__c }
                     );
+                    audit.Agent_Session__c = row.Agent_Session__c;
+                    audits.add(audit);
                 }
             } catch (OpenBoxException e) {
                 row.Last_Error__c = e.getMessage().abbreviate(4000);
                 if (row.Attempts__c >= settings.outboxMaxAttempts) {
                     row.Status__c = OpenBoxOutbox.STATUS_FAILED;
                 } else {
-                    blockedRequests.add(row.Governed_Request__c);
+                    blockedRequests.add(groupOf(row));
                     workRemains = true;
                 }
             }
@@ -106,7 +107,7 @@ public inherited sharing class OpenBoxOutboxDispatcher implements Queueable, Dat
                 SELECT Id
                 FROM OpenBox_Event_Outbox__c
                 WHERE Status__c = :OpenBoxOutbox.STATUS_QUEUED
-                ORDER BY Governed_Request__c, Sequence__c
+                ORDER BY Governed_Request__c, Agent_Session__c, Sequence__c
                 LIMIT :BATCH_SIZE
             ]
         );
@@ -116,6 +117,7 @@ public inherited sharing class OpenBoxOutboxDispatcher implements Queueable, Dat
                 Id,
                 Governed_Request__c,
                 Governed_Request__r.Request_Id__c,
+                Agent_Session__c,
                 Sequence__c,
                 Payload__c,
                 Attempts__c,
@@ -143,8 +145,8 @@ public inherited sharing class OpenBoxOutboxDispatcher implements Queueable, Dat
 
         public Integer compareTo(Object other) {
             OpenBox_Event_Outbox__c that = ((OutboxRow) other).record;
-            String thisRequest = String.valueOf(record.Governed_Request__c);
-            String thatRequest = String.valueOf(that.Governed_Request__c);
+            String thisRequest = String.valueOf(groupOf(record));
+            String thatRequest = String.valueOf(groupOf(that));
             if (thisRequest != thatRequest) {
                 return thisRequest < thatRequest ? -1 : 1;
             }
@@ -153,9 +155,20 @@ public inherited sharing class OpenBoxOutboxDispatcher implements Queueable, Dat
         }
     }
 
+    /**
+     * Events are ordered within their group: one tool call (governed request), or the
+     * conversation for events that belong to no single call.
+     */
+    private static Id groupOf(OpenBox_Event_Outbox__c row) {
+        return row.Governed_Request__c != null ? row.Governed_Request__c : row.Agent_Session__c;
+    }
+
     private static Map<String, Id> requestIdsFor(List<OpenBox_Event_Outbox__c> rows) {
         Map<String, Id> ids = new Map<String, Id>();
         for (OpenBox_Event_Outbox__c row : rows) {
+            if (row.Governed_Request__c == null) {
+                continue;
+            }
             ids.put(row.Governed_Request__r.Request_Id__c, row.Governed_Request__c);
         }
         return ids;

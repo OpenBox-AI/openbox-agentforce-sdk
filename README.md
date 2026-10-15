@@ -26,6 +26,7 @@ answer before any record changes, and both sides keep a correlated audit of what
 ## Contents
 
 - [Highlights](#highlights)
+- [Governing the whole conversation](#governing-the-whole-conversation)
 - [Architecture (C4)](#architecture-c4)
 - [How it works (sequence diagrams)](#how-it-works-sequence-diagrams)
 - [Wire format](#wire-format)
@@ -158,6 +159,47 @@ flowchart TB
   classDef ext fill:#999999,stroke:#6b6b6b,color:#fff
   style action fill:none,stroke:#444,stroke-dasharray:6 4
 ```
+
+## Governing the whole conversation
+
+Like the other OpenBox SDKs, the agent reports **every intent** to OpenBox, not only discount changes.
+Each user message is one OpenBox run, closed when Salesforce replies; all runs of a conversation share
+its `workflow_id` and `session_id`:
+
+| When | Event | Decides? |
+|---|---|---|
+| A user message arrives | `WorkflowStarted` (goal = the message), then `SignalReceived` `user_prompt` | **Yes**: block or approval refuses the message, halt ends the conversation |
+| The agent moves to a subagent | `SignalReceived` `subagent_selected` | No |
+| The agent calls any tool | `ActivityStarted`, `activity_type` = tool name, `activity_input` = its arguments | **Yes**: the tool runs only on allow; approval holds it |
+| The tool finishes | `ActivityCompleted` with the result or error | Read-only tools: output guardrails apply before the agent sees the result |
+| Salesforce replies | `WorkflowCompleted` (status `failed` when OpenBox refused the message), queued so the reply is not delayed | No |
+
+A turn that leaves a call waiting for human approval is not closed by the reply; it is closed when
+that call is approved and run, rejected or expires. Turns whose reply never arrives are closed by the
+hourly idle sweep.
+
+**How it hooks in.** Every subagent of the agent script (and the router) runs `Govern User Message`
+deterministically in `before_reasoning`, with the raw message (`@system_variables.user_input`), so
+the model never acts on a message OpenBox has not seen, and `End Turn` in `after_reasoning`, which
+closes the run once the reply is ready. The first call mints a conversation key; the
+agent keeps it in a variable and passes it to every governed action, which join the same session.
+
+**Governing your own tools.**
+
+- *Apex:* implement `OpenBoxToolExecutor` and call `OpenBoxToolGovernance.govern(...)` with the
+  conversation key, the tool name and its arguments. OpenBox decides before `execute` runs.
+  `OpenBox_FindOpportunity` is a worked example.
+- *Flows, standard actions, invocable Apex:* register them in `OpenBox_Governed_Tool__mdt` and give the
+  agent `Run Governed Tool (OpenBox)`. Only registered, active tools can run. The demo flow
+  `OpenBox_Log_Opportunity_Note` is registered as `log_opportunity_note`.
+- *Approvals:* `Check Approval (OpenBox Governed)` resolves any held call. An approved Apex tool runs
+  from the background poller; an approved flow or action runs when the agent checks on it, as the
+  agent's own user, never as the background job's user.
+
+**What Agentforce does not expose.** Two things the LangChain-based SDKs report have no hook here:
+the model's own calls (prompt and completion) and the agent's final reply. Messages Salesforce's own
+safety layer refuses before the agent script runs (for example "ignore previous instructions") never
+reach OpenBox; they are refused anyway.
 
 ## How it works (sequence diagrams)
 

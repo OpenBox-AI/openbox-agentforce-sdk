@@ -107,9 +107,23 @@ async function drainOutbox(requestId, timeoutMs = 180000) {
 
 // ── OpenBox helpers ──────────────────────────────────────────────────────────────────────
 
+/**
+ * Where OpenBox stored a request. A request on its own is its own OpenBox session (run id = request
+ * id); a request the agent made inside a governed conversation is a step of the conversation's
+ * session, found by the conversation key and run id.
+ */
+function correlation(requestId) {
+  const [record] = soql(
+    `SELECT Run_Id__c, Agent_Session__r.Session_Key__c FROM OpenBox_Governed_Request__c WHERE Request_Id__c = '${requestId}'`,
+  );
+  const sessionKey = record?.Agent_Session__r?.Session_Key__c;
+  return { runId: record?.Run_Id__c ?? requestId, sessionKey, key: sessionKey ?? requestId, conversation: Boolean(sessionKey) };
+}
+
 async function session(requestId, { attempts = 12 } = {}) {
+  const { key } = correlation(requestId);
   for (let i = 0; i < attempts; i++) {
-    const [match] = (await platform.findSessions(agentId, requestId)).filter((s) => s.workflow_id?.endsWith(requestId));
+    const [match] = (await platform.findSessions(agentId, key)).filter((s) => s.workflow_id?.endsWith(key));
     if (match) {
       const rows = await platform.sessionLogs(agentId, match.id);
       if (rows.length) return { stored: match, rows };
@@ -120,8 +134,9 @@ async function session(requestId, { attempts = 12 } = {}) {
 }
 
 async function decide(requestId, action) {
+  const { runId } = correlation(requestId);
   for (let i = 0; i < 12; i++) {
-    const pending = (await platform.pendingApprovals(agentId)).find((row) => row.run_id === requestId);
+    const pending = (await platform.pendingApprovals(agentId)).find((row) => row.run_id === runId);
     if (pending) {
       await platform.decideApproval(agentId, pending.id, action);
       return pending;
@@ -149,7 +164,9 @@ function expectEqual(actual, expected, label) {
 
 async function expectPairedSession(requestId, options = {}) {
   const { stored, rows } = await session(requestId);
-  const verification = verifySession(rows, options);
+  // A conversation's session stays open after each step; only idleness or a halt ends it.
+  const conversationOpen = correlation(requestId).conversation && !options.expectHalt;
+  const verification = verifySession(rows, conversationOpen ? { ...options, expectOpen: true } : options);
   expect(verification.ok, `pairing violations: ${verification.problems.join('; ')}\n${renderSession(rows)}`);
   return { stored, rows, verification };
 }

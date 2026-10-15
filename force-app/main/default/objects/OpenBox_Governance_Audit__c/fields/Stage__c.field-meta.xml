@@ -8,6 +8,11 @@
         <valueSetDefinition>
             <sorted>false</sorted>
             <value>
+                <fullName>Prompt</fullName>
+                <default>false</default>
+                <label>Prompt</label>
+            </value>
+            <value>
                 <fullName>Authorization</fullName>
                 <default>false</default>
                 <label>Authorization</label>

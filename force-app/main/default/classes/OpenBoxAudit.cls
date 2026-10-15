@@ -7,6 +7,7 @@
  * never request headers, and free text only after OpenBox guardrail redaction.
  */
 public inherited sharing class OpenBoxAudit {
+    public static final String STAGE_PROMPT = 'Prompt';
     public static final String STAGE_AUTHORIZATION = 'Authorization';
     public static final String STAGE_APPROVAL = 'Approval';
     public static final String STAGE_EXECUTION = 'Execution';

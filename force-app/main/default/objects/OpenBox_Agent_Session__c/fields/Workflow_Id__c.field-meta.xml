@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Workflow_Id__c</fullName>
+    <description>OpenBox workflow_id shared by every event of the conversation.</description>
+    <label>Workflow Id</label>
+    <length>255</length>
+    <required>false</required>
+    <type>Text</type>
+</CustomField>

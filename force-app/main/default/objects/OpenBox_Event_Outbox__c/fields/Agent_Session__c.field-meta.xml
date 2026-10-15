@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Agent_Session__c</fullName>
+    <description>Set for conversation-level events that belong to no single tool call.</description>
+    <label>Agent Session</label>
+    <deleteConstraint>SetNull</deleteConstraint>
+    <referenceTo>OpenBox_Agent_Session__c</referenceTo>
+    <relationshipLabel>Outbox Events</relationshipLabel>
+    <relationshipName>Outbox_Events</relationshipName>
+    <required>false</required>
+    <type>Lookup</type>
+</CustomField>

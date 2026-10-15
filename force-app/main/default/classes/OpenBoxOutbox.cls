@@ -24,12 +24,38 @@ public inherited sharing class OpenBoxOutbox {
         OpenBox_Governed_Request__c request,
         List<Map<String, Object>> events
     ) {
-        List<OpenBox_Event_Outbox__c> rows = new List<OpenBox_Event_Outbox__c>();
         Integer sequence = request.Next_Event_Sequence__c == null ? 0 : request.Next_Event_Sequence__c.intValue();
+        List<OpenBox_Event_Outbox__c> rows = rows(events, sequence);
+        for (OpenBox_Event_Outbox__c row : rows) {
+            row.Governed_Request__c = request.Id;
+        }
+        request.Next_Event_Sequence__c = sequence + rows.size();
+        return rows;
+    }
+
+    /**
+     * Stages conversation-level events (user prompt and subagent signals) that belong to no single
+     * tool call. They are ordered per conversation, with their own sequence cursor.
+     */
+    public static List<OpenBox_Event_Outbox__c> stage(
+        OpenBox_Agent_Session__c session,
+        List<Map<String, Object>> events
+    ) {
+        Integer sequence = session.Next_Event_Sequence__c == null ? 0 : session.Next_Event_Sequence__c.intValue();
+        List<OpenBox_Event_Outbox__c> rows = rows(events, sequence);
+        for (OpenBox_Event_Outbox__c row : rows) {
+            row.Agent_Session__c = session.Id;
+        }
+        session.Next_Event_Sequence__c = sequence + rows.size();
+        return rows;
+    }
+
+    private static List<OpenBox_Event_Outbox__c> rows(List<Map<String, Object>> events, Integer firstSequence) {
+        List<OpenBox_Event_Outbox__c> rows = new List<OpenBox_Event_Outbox__c>();
+        Integer sequence = firstSequence;
         for (Map<String, Object> event : events) {
             rows.add(
                 new OpenBox_Event_Outbox__c(
-                    Governed_Request__c = request.Id,
                     Sequence__c = sequence++,
                     Event_Type__c = describe(event),
                     Payload__c = JSON.serialize(event),
@@ -38,7 +64,6 @@ public inherited sharing class OpenBoxOutbox {
                 )
             );
         }
-        request.Next_Event_Sequence__c = sequence;
         return rows;
     }
 

@@ -18,6 +18,11 @@
                 <label>Pending Approval</label>
             </value>
             <value>
+                <fullName>Approved</fullName>
+                <default>false</default>
+                <label>Approved</label>
+            </value>
+            <value>
                 <fullName>Executed</fullName>
                 <default>false</default>
                 <label>Executed</label>

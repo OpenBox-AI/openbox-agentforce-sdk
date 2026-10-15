@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomObject xmlns="http://soap.sforce.com/2006/04/metadata">
+    <description>Registry of tools the agent may run through the generic OpenBox governed action. The agent names a tool; only tools listed and active here can run, so the model can never reach an arbitrary flow or action.</description>
+    <label>OpenBox Governed Tool</label>
+    <pluralLabel>OpenBox Governed Tools</pluralLabel>
+    <visibility>Public</visibility>
+</CustomObject>

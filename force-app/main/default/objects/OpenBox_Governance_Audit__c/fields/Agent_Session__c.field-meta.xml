@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Agent_Session__c</fullName>
+    <description>The conversation the entry belongs to.</description>
+    <label>Agent Session</label>
+    <deleteConstraint>SetNull</deleteConstraint>
+    <referenceTo>OpenBox_Agent_Session__c</referenceTo>
+    <relationshipLabel>Audit Entries</relationshipLabel>
+    <relationshipName>Audit_Entries</relationshipName>
+    <required>false</required>
+    <type>Lookup</type>
+</CustomField>
