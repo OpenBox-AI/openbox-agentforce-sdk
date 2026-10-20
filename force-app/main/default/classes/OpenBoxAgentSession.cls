@@ -225,7 +225,7 @@ public without sharing class OpenBoxAgentSession {
                 Agent_Session__c = :sessionId
                 AND Run_Id__c = :runId
                 AND Id NOT IN :resolvedRequestIds
-                AND Status__c IN (:OpenBoxDiscountGovernance.STATUS_PENDING, :OpenBoxToolGovernance.STATUS_APPROVED)
+                AND Status__c IN :OpenBoxRequestStatus.WAITING
         ];
         return turnOver && stillWaiting == 0 && sessions[0].Status__c != STATUS_HALTED;
     }

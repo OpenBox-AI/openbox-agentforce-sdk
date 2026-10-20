@@ -67,19 +67,31 @@ public with sharing class OpenBox_GovernedAction {
                 registry.put(tool.Tool_Name__c.trim().toLowerCase(), tool);
             }
         }
-        OpenBoxToolGovernance governance = new OpenBoxToolGovernance();
+        // Every registered call is decided before any of them runs, so they share one transaction.
         List<Result> results = new List<Result>();
+        List<OpenBoxToolGovernance.ToolCall> calls = new List<OpenBoxToolGovernance.ToolCall>();
+        List<Integer> positions = new List<Integer>();
         for (Request request : requests) {
-            results.add(runOne(governance, registry, request));
+            Object prepared = prepare(registry, request);
+            if (prepared instanceof Result) {
+                results.add((Result) prepared);
+            } else {
+                results.add(null);
+                calls.add((OpenBoxToolGovernance.ToolCall) prepared);
+                positions.add(results.size() - 1);
+            }
+        }
+        if (!calls.isEmpty()) {
+            List<OpenBoxToolGovernance.Result> outcomes = new OpenBoxToolGovernance().governAll(calls);
+            for (Integer i = 0; i < outcomes.size(); i++) {
+                results[positions[i]] = toResult(outcomes[i]);
+            }
         }
         return results;
     }
 
-    private static Result runOne(
-        OpenBoxToolGovernance governance,
-        Map<String, OpenBox_Governed_Tool__mdt> registry,
-        Request request
-    ) {
+    /** The tool call for a request, or the refusal when it names no registered tool or bad input. */
+    private static Object prepare(Map<String, OpenBox_Governed_Tool__mdt> registry, Request request) {
         String name = request.toolName == null ? '' : request.toolName.trim().toLowerCase();
         OpenBox_Governed_Tool__mdt tool = registry.get(name);
         if (tool == null) {
@@ -103,7 +115,15 @@ public with sharing class OpenBox_GovernedAction {
         call.targetType = tool.Target_Type__c == null ? null : tool.Target_Type__c.trim().toLowerCase();
         call.targetName = tool.Target_Name__c == null ? null : tool.Target_Name__c.trim();
         call.readOnly = tool.Read_Only__c;
-        return toResult(governance.govern(call));
+        call.justification = input.get('justification') instanceof String ? (String) input.get('justification') : null;
+        if (call.targetType == OpenBoxToolGovernance.TARGET_RECORD_WRITER) {
+            Type writer = String.isBlank(call.targetName) ? null : Type.forName(call.targetName);
+            if (writer == null) {
+                return refusal('Failed', 'The record writer ' + call.targetName + ' of tool ' + call.toolName + ' does not exist.', request);
+            }
+            call.writer = writer;
+        }
+        return call;
     }
 
     public static Result toResult(OpenBoxToolGovernance.Result outcome) {

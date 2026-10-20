@@ -14,8 +14,10 @@
 
 ---
 
-The OpenBox SDK for Salesforce, written in Apex and installed in the customer's own org. An Agentforce
-agent changes Opportunity discounts only through a native Apex action that asks OpenBox first.
+The OpenBox SDK for Salesforce, written in Apex and installed in the customer's own org. Every message
+an Agentforce agent receives and every tool it calls is decided by OpenBox first, and any record field
+can be put behind OpenBox so that the agent changes it only through a governed write. The reference
+agent in this repo changes Opportunity discounts that way.
 OpenBox answers **`allow`**, **`require_approval`**, **`block`** or **`halt`**; Salesforce enforces the
 answer before any record changes, and both sides keep a correlated audit of what happened.
 
@@ -27,6 +29,7 @@ answer before any record changes, and both sides keep a correlated audit of what
 
 - [Highlights](#highlights)
 - [Governing the whole conversation](#governing-the-whole-conversation)
+- [Governing your own record writes](#governing-your-own-record-writes)
 - [Architecture (C4)](#architecture-c4)
 - [How it works (sequence diagrams)](#how-it-works-sequence-diagrams)
 - [Wire format](#wire-format)
@@ -43,7 +46,7 @@ answer before any record changes, and both sides keep a correlated audit of what
 
 | | |
 |---|---|
-| **One path to the data** | The agent cannot edit `Discount__c`; a trigger rejects every change that does not come through the governed action |
+| **One path to the data** | Any field can be guarded: a one-line trigger rejects every change that does not come through an OpenBox governed write (the reference agent guards `Discount__c`) |
 | **Four verdicts, enforced** | Allow, require approval, block, halt, enforced in Apex before any write |
 | **Fails closed** | No answer, a timeout, a malformed body or an identity failure means no write |
 | **No secrets in code** | API key in a Named Credential Apex cannot read; identity proven by a certificate whose private key cannot leave Salesforce |
@@ -128,10 +131,12 @@ flowchart TB
   agent(["<b>Agentforce agent</b><br/><small>[Container]</small>"]):::ext
   poller["<b>OpenBoxApprovalPoller</b><br/><small>[Component: Queueable]</small><br/>Resumes approved requests"]:::component
 
-  subgraph action["Governed discount action"]
+  entry["<b>OpenBox_GovernedDiscountUpdate</b><br/><small>[Reference agent: Invocable]</small><br/>What Agentforce calls; the change is<br/>described by OpportunityDiscountWriter"]:::component
+
+  subgraph action["OpenBox SDK (the package)"]
     direction TB
-    entry["<b>OpenBox_GovernedDiscountUpdate</b><br/><small>[Component: Invocable]</small><br/>What Agentforce calls"]:::component
-    gov["<b>OpenBoxDiscountGovernance</b><br/><small>[Component: Service]</small><br/>Decide phase (callouts only),<br/>then one commit phase (all DML)"]:::component
+    gov["<b>OpenBoxToolGovernance</b><br/><small>[Component: Service]</small><br/>Decide phase (callouts only),<br/>then one commit phase (all DML)"]:::component
+    guard["<b>OpenBoxFieldGuard</b><br/><small>[Component: trigger helper]</small><br/>Only governed writes change<br/>a guarded field"]:::component
     access["<b>OpenBoxAccess</b><br/><small>[Component]</small><br/>Salesforce permission checks"]:::component
     run["<b>OpenBoxGovernedRun</b><br/><small>[Component]</small><br/>Event order, pairs every<br/>started with its completed"]:::component
     events["<b>OpenBoxEvents, OpenBoxSpan</b><br/><small>[Component: Builders]</small><br/>Exact OpenBox SDK payloads"]:::component
@@ -143,8 +148,9 @@ flowchart TB
   core["<b>OpenBox Core + Identity</b><br/><small>[External]</small>"]:::ext
 
   agent -- "Invokes" --> entry
-  entry -- "requestDiscounts" --> gov
-  poller -- "resolvePending" --> gov
+  entry -- "governAll" --> gov
+  poller -- "resolve" --> gov
+  gov -- "Authorizes the write" --> guard
   gov -- "Checks the user" --> access
   gov -- "Drives" --> run
   gov -- "Stages events" --> outbox
@@ -186,15 +192,63 @@ agent keeps it in a variable and passes it to every governed action, which join 
 
 **Governing your own tools.**
 
+- *Record writes:* extend `OpenBoxRecordWriter` (see [Governing your own record writes](#governing-your-own-record-writes)).
+  `OpportunityDiscountWriter` in the reference agent is a worked example.
 - *Apex:* implement `OpenBoxToolExecutor` and call `OpenBoxToolGovernance.govern(...)` with the
   conversation key, the tool name and its arguments. OpenBox decides before `execute` runs.
   `OpenBox_FindOpportunity` is a worked example.
 - *Flows, standard actions, invocable Apex:* register them in `OpenBox_Governed_Tool__mdt` and give the
-  agent `Run Governed Tool (OpenBox)`. Only registered, active tools can run. The demo flow
+  agent `Run Governed Tool (OpenBox)`. Only registered, active tools can run. A record writer can be
+  registered the same way (target type `record_writer`). The reference agent's flow
   `OpenBox_Log_Opportunity_Note` is registered as `log_opportunity_note`.
-- *Approvals:* `Check Approval (OpenBox Governed)` resolves any held call. An approved Apex tool runs
-  from the background poller; an approved flow or action runs when the agent checks on it, as the
-  agent's own user, never as the background job's user.
+- *Approvals:* `Check Approval (OpenBox Governed)` resolves any held call, through the same path the
+  background poller uses. An approved Apex tool or record write runs from the poller; an approved
+  flow or action runs when the agent checks on it, as the agent's own user, never as the background
+  job's user.
+
+## Governing your own record writes
+
+The package carries no business logic. To put a field behind OpenBox, extend `OpenBoxRecordWriter`
+and say what is read, what changes and which facts OpenBox policies decide on; the SDK does the rest:
+
+```apex
+public with sharing class AccountCreditLimitWriter extends OpenBoxRecordWriter {
+    public override SObjectType objectType() { return Account.SObjectType; }
+    public override Id recordId(Map<String, Object> input) { return (Id) input.get('account_id'); }
+    public override Map<String, Object> changes(Map<String, Object> input) {
+        return new Map<String, Object>{ 'Credit_Limit__c' => Decimal.valueOf(String.valueOf(input.get('limit'))) };
+    }
+    public override List<String> snapshotFields() { return new List<String>{ 'Name', 'Rating', 'Credit_Limit__c' }; }
+}
+```
+
+```apex
+OpenBoxToolGovernance.ToolCall call = new OpenBoxToolGovernance.ToolCall();
+call.toolName = 'AccountCreditLimitUpdate';            // the activity_type policies match on
+call.writer = AccountCreditLimitWriter.class;
+call.input = new Map<String, Object>{ 'account_id' => accountId, 'limit' => 50000 };
+call.sessionKey = conversationKey;                     // blank: the write is an OpenBox run of its own
+OpenBoxToolGovernance.Result result = new OpenBoxToolGovernance().govern(call);
+```
+
+```apex
+trigger AccountCreditLimitGuard on Account(before insert, before update) {
+    OpenBoxFieldGuard.enforce(Trigger.new, Trigger.oldMap, new Set<SObjectField>{ Account.Credit_Limit__c });
+}
+```
+
+What every governed write gets, without code of its own:
+
+| Step | What happens |
+|---|---|
+| Before OpenBox | `validate()`, the requesting user's entitlement (`OpenBox_Governed_Record_Write`, or the writer's own custom permission) and capacity checks |
+| Lookup | `<Object>Lookup` activity; the record is read `WITH USER_MODE` under a SELECT span, and output guardrails redact the snapshot before `summary()` reaches the agent |
+| Decision | The write activity's `ActivityStarted` carries `facts()`, plus `requested_change`, `justification` and `actor_id` |
+| Before the write | Locked re-read (`SELECT ... FOR UPDATE` span), staleness against what was read, `refusal()`, object/field/record access for the requesting user, then an UPDATE span for behaviour rules |
+| Write | One system-mode update in the commit phase, authorized past the field guard for that DML only; the outcome reaches OpenBox through the outbox |
+| Approval | The request waits as `Pending_Approval` and is applied by the poller or `Check Approval`, after the same checks |
+
+Several calls in one transaction (`governAll`) are all decided before any of them writes.
 
 **What Agentforce does not expose.** Two things the LangChain-based SDKs report have no hook here:
 the model's own calls (prompt and completion) and the agent's final reply. Messages Salesforce's own
@@ -267,12 +321,12 @@ sequenceDiagram
   participant Dash as OpenBox dashboard
   participant Core as OpenBox Core
   participant Poller as Approval poller or Check Discount Approval
-  participant Apex as OpenBoxDiscountGovernance
+  participant Apex as OpenBoxToolGovernance
   participant Opp as Opportunity
 
   Approver->>Dash: Approve request
   Dash->>Core: Record decision
-  Poller->>Apex: resolvePending(request)
+  Poller->>Apex: resolve(request)
   Apex->>Apex: Lock row, must still be Pending_Approval
   Apex->>Core: POST /api/v3/governance/approval
   Core-->>Apex: approved, rejected, expired or pending
@@ -333,9 +387,10 @@ WorkflowCompleted | WorkflowFailed
 
 ## Security model
 
-- **The governed action is the only path.** The agent user holds `Discount__c` read-only, and
-  `OpportunityDiscountGuard` rejects any discount change not authorized by the governed action
-  (people can be exempted with `OpenBox_Discount_Direct_Edit`). Agent instructions are not relied on.
+- **The governed write is the only path.** The agent user holds a guarded field read-only, and a
+  trigger calling `OpenBoxFieldGuard` rejects any change not authorized by a governed write for that
+  record and field (people can be exempted with `OpenBox_Guarded_Field_Direct_Edit`). The reference
+  agent guards `Discount__c` with `OpportunityDiscountGuard`. Agent instructions are not relied on.
 - **Both systems must agree.** An OpenBox `allow` is followed by Salesforce checks for the
   requesting user: entitlement, object edit, field read, record edit access.
 - **Fails closed.** Unreachable OpenBox, timeouts, non-2xx answers, malformed bodies, unknown
@@ -371,19 +426,26 @@ sign-off for late-stage deals) and **goal alignment**.
 .
 ├── force-app/                     # the package (OpenBoxGovernance, unlocked)
 │   └── main/default/
-│       ├── classes/               # Apex SDK, governed actions, tests
-│       ├── triggers/              # OpportunityDiscountGuard
-│       ├── objects/               # Discount__c, Governed Request, Audit, Event Outbox, Settings (mdt)
+│       ├── classes/               # Apex SDK, its actions, tests (OpenBoxTestWriter governs NextStep)
+│       ├── objects/               # Governed Request, Agent Session, Audit, Event Outbox, Settings (mdt)
 │       ├── namedCredentials/      # OpenBox_Core
 │       ├── externalCredentials/   # OpenBox_Core_Auth (API key)
 │       ├── remoteSiteSettings/    # OpenBox_Identity
 │       ├── permissionsets/        # OpenBox_Governed_Agent, OpenBox_Governance_Admin
-│       └── customPermissions/     # Governed_Discount_Update, Discount_Direct_Edit
-├── reference-agent/               # OpenBox_Sales_Agent (Agent Script); deployed, not packaged
+│       └── customPermissions/     # Governed_Record_Write, Guarded_Field_Direct_Edit
+├── reference-agent/               # the worked example; deployed, not packaged
+│   └── main/default/
+│       ├── aiAuthoringBundles/    # OpenBox_Sales_Agent (Agent Script)
+│       ├── classes/               # OpportunityDiscountWriter, the discount, lookup and approval actions, tests
+│       ├── triggers/              # OpportunityDiscountGuard (OpenBoxFieldGuard on Discount__c)
+│       ├── objects/               # Opportunity.Discount__c
+│       ├── flows/, customMetadata/ # OpenBox_Log_Opportunity_Note, registered as log_opportunity_note
+│       └── permissionsets/        # OpenBox_Sales_Agent, OpenBox_Sales_Admin
 ├── config/                        # scratch org definition for the package test org
 ├── scripts/
 │   ├── openbox/                   # provision agent and controls, inspect sessions, approvals
-│   ├── salesforce/                # certificate, deploy, endpoints, credential, agent user, org setup
+│   ├── salesforce/                # certificate, deploy, endpoints, credential, agent user, org setup;
+│   │                              # destructive/ lists components to delete from orgs deployed earlier
 │   └── e2e/run-live.mjs           # end-to-end suite against a real org and OpenBox
 └── docs/                          # PRD, architecture page, one-pager
 ```

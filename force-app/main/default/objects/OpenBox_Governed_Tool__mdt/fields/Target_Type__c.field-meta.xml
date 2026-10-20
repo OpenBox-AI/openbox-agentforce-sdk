@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
     <fullName>Target_Type__c</fullName>
-    <description>flow, standard or apex (an invocable Apex class).</description>
+    <description>flow, standard, apex (an invocable Apex class), apex_executor (an OpenBoxToolExecutor class) or record_writer (an OpenBoxRecordWriter class).</description>
     <label>Target Type</label>
     <length>40</length>
     <required>false</required>

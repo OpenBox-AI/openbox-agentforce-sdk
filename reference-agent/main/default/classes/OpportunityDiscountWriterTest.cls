@@ -1,16 +1,19 @@
 /**
- * Acceptance tests for the governed discount action (PRD section 7), driven against a scripted
- * OpenBox Core. Each test asserts the Salesforce outcome, the audit trail and the governance events
- * on the wire, including that every started event and span is paired with its completion.
+ * Acceptance tests for the reference discount action (PRD section 7): OpportunityDiscountWriter
+ * governed by the OpenBox SDK, driven against a scripted OpenBox Core. Each test asserts the
+ * Salesforce outcome, the audit trail and the governance events on the wire, including that every
+ * started event and span is paired with its completion. The events are the wire contract the
+ * provisioned OpenBox policies match on (scripts/openbox/controls.mjs).
  */
 @IsTest
-private class OpenBoxDiscountGovernanceTest {
+private class OpportunityDiscountWriterTest {
     private static final String ACME_NAME = 'Acme renewal';
     private static final String GLOBEX_NAME = 'Globex expansion';
+    private static final String LOOKUP = 'OpportunityLookup';
 
     @TestSetup
     static void setup() {
-        OpenBoxTestData.createCast();
+        OpportunityDiscountTestData.createCast();
     }
 
     // ── ALLOW ───────────────────────────────────────────────────────────────────────────────
@@ -19,21 +22,20 @@ private class OpenBoxDiscountGovernanceTest {
     static void allowUpdatesOnceAuditsAndClosesEveryPair() {
         OpenBoxTestData.useDefaultSettings();
         OpenBoxCoreMock core = OpenBoxCoreMock.install();
-        Opportunity acme = OpenBoxTestData.opportunityNamed(ACME_NAME);
-        OpenBoxDiscountGovernance.Outcome outcome;
+        Opportunity acme = OpportunityDiscountTestData.opportunityNamed(ACME_NAME);
+        OpenBox_GovernedDiscountUpdate.Result outcome;
 
         System.runAs(OpenBoxTestData.agentUser()) {
             Test.startTest();
-            outcome = new OpenBoxDiscountGovernance()
-                .requestDiscounts(
-                    new List<OpenBoxDiscountGovernance.DiscountRequest>{
-                        OpenBoxTestData.request(acme.Id, 10, 'Multi-year renewal')
+            outcome = OpenBox_GovernedDiscountUpdate.updateDiscount(
+                    new List<OpenBox_GovernedDiscountUpdate.Request>{
+                        OpportunityDiscountTestData.request(acme.Id, 10, 'Multi-year renewal')
                     }
                 )[0];
             Test.stopTest();
         }
 
-        Assert.areEqual(OpenBoxDiscountGovernance.STATUS_EXECUTED, outcome.status, outcome.message);
+        Assert.areEqual(OpenBoxRequestStatus.EXECUTED, outcome.status, outcome.message);
         Assert.isTrue(outcome.changed);
         Assert.areEqual('ALLOW', outcome.decision);
         Assert.isTrue(outcome.previousDiscount == 5, 'previous discount is reported');
@@ -81,9 +83,9 @@ private class OpenBoxDiscountGovernanceTest {
     static void blockLeavesRecordUnchangedAndClosesRunAsFailed() {
         OpenBoxTestData.useDefaultSettings();
         OpenBoxCoreMock core = OpenBoxCoreMock.install()
-            .onActivityStarted(OpenBoxDiscountGovernance.ACTIVITY_UPDATE, 'block', 'Discounts above 40% are forbidden');
-        Opportunity acme = OpenBoxTestData.opportunityNamed(ACME_NAME);
-        OpenBoxDiscountGovernance.Outcome outcome;
+            .onActivityStarted(OpportunityDiscountWriter.TOOL_NAME, 'block', 'Discounts above 40% are forbidden');
+        Opportunity acme = OpportunityDiscountTestData.opportunityNamed(ACME_NAME);
+        OpenBox_GovernedDiscountUpdate.Result outcome;
 
         System.runAs(OpenBoxTestData.agentUser()) {
             Test.startTest();
@@ -91,13 +93,13 @@ private class OpenBoxDiscountGovernanceTest {
             Test.stopTest();
         }
 
-        Assert.areEqual(OpenBoxDiscountGovernance.STATUS_BLOCKED, outcome.status);
+        Assert.areEqual(OpenBoxRequestStatus.BLOCKED, outcome.status);
         Assert.isFalse(outcome.changed);
         Assert.isTrue(outcome.message.contains('Discounts above 40% are forbidden'), outcome.message);
         assertDiscount(ACME_NAME, 5, 'a blocked request must not write');
         Assert.areEqual(new List<String>{ 'Blocked' }, OpenBoxTestData.auditOutcomes());
 
-        Map<String, Object> updateCompleted = completionOf(core, OpenBoxDiscountGovernance.ACTIVITY_UPDATE);
+        Map<String, Object> updateCompleted = completionOf(core, OpportunityDiscountWriter.TOOL_NAME);
         Assert.areEqual('failed', updateCompleted.get('status'));
         Assert.areEqual('GovernanceBlocked', ((Map<String, Object>) updateCompleted.get('error')).get('type'));
         Assert.areEqual(0, countSpans(core, 'UPDATE Opportunity'), 'no write span may be reported for a refused write');
@@ -112,12 +114,12 @@ private class OpenBoxDiscountGovernanceTest {
         OpenBoxTestData.useDefaultSettings();
         OpenBoxCoreMock core = OpenBoxCoreMock.install()
             .onActivityStarted(
-                OpenBoxDiscountGovernance.ACTIVITY_UPDATE,
+                OpportunityDiscountWriter.TOOL_NAME,
                 'halt',
                 'Abusive discount; agent session halted'
             );
-        Opportunity acme = OpenBoxTestData.opportunityNamed(ACME_NAME);
-        OpenBoxDiscountGovernance.Outcome outcome;
+        Opportunity acme = OpportunityDiscountTestData.opportunityNamed(ACME_NAME);
+        OpenBox_GovernedDiscountUpdate.Result outcome;
 
         System.runAs(OpenBoxTestData.agentUser()) {
             Test.startTest();
@@ -125,7 +127,7 @@ private class OpenBoxDiscountGovernanceTest {
             Test.stopTest();
         }
 
-        Assert.areEqual(OpenBoxDiscountGovernance.STATUS_HALTED, outcome.status);
+        Assert.areEqual(OpenBoxRequestStatus.HALTED, outcome.status);
         assertDiscount(ACME_NAME, 5);
         Assert.areEqual(1, core.eventsOfType('WorkflowFailed').size());
         Map<String, Object> failed = core.eventsOfType('WorkflowFailed')[0];
@@ -146,12 +148,12 @@ private class OpenBoxDiscountGovernanceTest {
         OpenBoxTestData.useDefaultSettings();
         OpenBoxCoreMock core = OpenBoxCoreMock.install()
             .onActivityStarted(
-                OpenBoxDiscountGovernance.ACTIVITY_UPDATE,
+                OpportunityDiscountWriter.TOOL_NAME,
                 'require_approval',
                 'Discounts over 15% need sales-ops approval'
             );
-        Opportunity acme = OpenBoxTestData.opportunityNamed(ACME_NAME);
-        OpenBoxDiscountGovernance.Outcome outcome;
+        Opportunity acme = OpportunityDiscountTestData.opportunityNamed(ACME_NAME);
+        OpenBox_GovernedDiscountUpdate.Result outcome;
 
         System.runAs(OpenBoxTestData.agentUser()) {
             Test.startTest();
@@ -159,14 +161,14 @@ private class OpenBoxDiscountGovernanceTest {
             Test.stopTest();
         }
 
-        Assert.areEqual(OpenBoxDiscountGovernance.STATUS_PENDING, outcome.status);
+        Assert.areEqual(OpenBoxRequestStatus.PENDING, outcome.status);
         Assert.isFalse(outcome.changed);
         Assert.isNotNull(outcome.approvalExpiresAt);
         Assert.isTrue(outcome.message.contains(outcome.requestNumber), outcome.message);
         assertDiscount(ACME_NAME, 5, 'nothing changes before approval');
 
         OpenBox_Governed_Request__c record = OpenBoxTestData.governedRequests()[0];
-        Assert.areEqual(OpenBoxDiscountGovernance.STATUS_PENDING, record.Status__c);
+        Assert.areEqual(OpenBoxRequestStatus.PENDING, record.Status__c);
         Assert.isNotNull(record.Activity_Id__c, 'the approval is keyed on the update activity id');
         Assert.areEqual(new List<String>{ 'Approval_Required' }, OpenBoxTestData.auditOutcomes());
         Assert.areEqual(0, core.eventsOfType('WorkflowCompleted').size(), 'the run stays open while a human decides');
@@ -176,21 +178,21 @@ private class OpenBoxDiscountGovernanceTest {
     @IsTest
     static void approvedRequestExecutesOnceInLaterTransactionAndReplayIsNoOp() {
         OpenBoxTestData.useDefaultSettings();
-        Opportunity acme = OpenBoxTestData.opportunityNamed(ACME_NAME);
+        Opportunity acme = OpportunityDiscountTestData.opportunityNamed(ACME_NAME);
         OpenBox_Governed_Request__c pending = pendingRequest(acme, 25);
         OpenBoxCoreMock core = OpenBoxCoreMock.install().answerApproval('allow', 'Approved by sales ops');
-        List<OpenBoxDiscountGovernance.Outcome> first;
-        List<OpenBoxDiscountGovernance.Outcome> replay;
+        OpenBox_GovernedDiscountUpdate.Result first;
+        OpenBox_GovernedDiscountUpdate.Result replay;
 
         Test.startTest();
-        first = new OpenBoxDiscountGovernance().resolvePending(new Set<Id>{ pending.Id });
+        first = resolve(pending.Id);
         Integer calloutsAfterFirst = core.requests.size();
-        replay = new OpenBoxDiscountGovernance().resolvePending(new Set<Id>{ pending.Id });
+        replay = resolve(pending.Id);
         Assert.areEqual(calloutsAfterFirst, core.requests.size(), 'a replay must not contact OpenBox again');
         Test.stopTest();
 
-        Assert.areEqual(OpenBoxDiscountGovernance.STATUS_EXECUTED, first[0].status, first[0].message);
-        Assert.areEqual(OpenBoxDiscountGovernance.STATUS_EXECUTED, replay[0].status);
+        Assert.areEqual(OpenBoxRequestStatus.EXECUTED, first.status, first.message);
+        Assert.areEqual(OpenBoxRequestStatus.EXECUTED, replay.status);
         assertDiscount(ACME_NAME, 25);
         Assert.areEqual(
             1,
@@ -203,7 +205,7 @@ private class OpenBoxDiscountGovernanceTest {
             'the poll addresses the activity that requested approval'
         );
 
-        Map<String, Object> completion = completionOf(core, OpenBoxDiscountGovernance.ACTIVITY_UPDATE);
+        Map<String, Object> completion = completionOf(core, OpportunityDiscountWriter.TOOL_NAME);
         Assert.areEqual(
             pending.Activity_Id__c,
             completion.get('activity_id'),
@@ -219,7 +221,7 @@ private class OpenBoxDiscountGovernanceTest {
         assertApprovalTerminal(
             'halt',
             'Rejected by finance',
-            OpenBoxDiscountGovernance.STATUS_REJECTED,
+            OpenBoxRequestStatus.REJECTED,
             'ApprovalRejected'
         );
     }
@@ -229,7 +231,7 @@ private class OpenBoxDiscountGovernanceTest {
         assertApprovalTerminal(
             'halt',
             'approval request expired',
-            OpenBoxDiscountGovernance.STATUS_EXPIRED,
+            OpenBoxRequestStatus.EXPIRED,
             'ApprovalExpired'
         );
     }
@@ -237,7 +239,7 @@ private class OpenBoxDiscountGovernanceTest {
     @IsTest
     static void pendingApprovalPastExpiryIsTreatedAsExpired() {
         OpenBoxTestData.useDefaultSettings();
-        Opportunity acme = OpenBoxTestData.opportunityNamed(ACME_NAME);
+        Opportunity acme = OpportunityDiscountTestData.opportunityNamed(ACME_NAME);
         OpenBox_Governed_Request__c pending = pendingRequest(acme, 25);
         OpenBoxCoreMock core = OpenBoxCoreMock.install();
         Map<String, Object> lapsed = new Map<String, Object>{
@@ -248,27 +250,25 @@ private class OpenBoxDiscountGovernanceTest {
         core.answerRaw(JSON.serialize(lapsed));
 
         Test.startTest();
-        OpenBoxDiscountGovernance.Outcome outcome = new OpenBoxDiscountGovernance()
-            .resolvePending(new Set<Id>{ pending.Id })[0];
+        OpenBox_GovernedDiscountUpdate.Result outcome = resolve(pending.Id);
         Test.stopTest();
 
-        Assert.areEqual(OpenBoxDiscountGovernance.STATUS_EXPIRED, outcome.status);
+        Assert.areEqual(OpenBoxRequestStatus.EXPIRED, outcome.status);
         assertDiscount(ACME_NAME, 5);
     }
 
     @IsTest
     static void stillPendingApprovalChangesNothing() {
         OpenBoxTestData.useDefaultSettings();
-        Opportunity acme = OpenBoxTestData.opportunityNamed(ACME_NAME);
+        Opportunity acme = OpportunityDiscountTestData.opportunityNamed(ACME_NAME);
         OpenBox_Governed_Request__c pending = pendingRequest(acme, 25);
         OpenBoxCoreMock core = OpenBoxCoreMock.install().answerApproval('require_approval', null);
 
         Test.startTest();
-        OpenBoxDiscountGovernance.Outcome outcome = new OpenBoxDiscountGovernance()
-            .resolvePending(new Set<Id>{ pending.Id })[0];
+        OpenBox_GovernedDiscountUpdate.Result outcome = resolve(pending.Id);
         Test.stopTest();
 
-        Assert.areEqual(OpenBoxDiscountGovernance.STATUS_PENDING, outcome.status);
+        Assert.areEqual(OpenBoxRequestStatus.PENDING, outcome.status);
         assertDiscount(ACME_NAME, 5);
         Assert.areEqual(0, core.evaluated.size(), 'polling a pending approval emits no governance events');
         OpenBox_Governed_Request__c record = [
@@ -285,7 +285,7 @@ private class OpenBoxDiscountGovernanceTest {
     @IsTest
     static void recordEditedWhileAwaitingApprovalIsRejectedAsStale() {
         OpenBoxTestData.useDefaultSettings();
-        Opportunity acme = OpenBoxTestData.opportunityNamed(ACME_NAME);
+        Opportunity acme = OpportunityDiscountTestData.opportunityNamed(ACME_NAME);
         OpenBox_Governed_Request__c pending = pendingRequest(acme, 25);
         System.runAs(OpenBoxTestData.adminUser()) {
             update new Opportunity(
@@ -305,12 +305,12 @@ private class OpenBoxDiscountGovernanceTest {
             FROM OpenBox_Governed_Request__c
             WHERE Id = :pending.Id
         ];
-        Assert.areEqual(OpenBoxDiscountGovernance.STATUS_STALE, record.Status__c, record.Reason__c);
+        Assert.areEqual(OpenBoxRequestStatus.STALE, record.Status__c, record.Reason__c);
         assertDiscount(ACME_NAME, 7, 'a stale approval must not overwrite the human edit');
         Assert.areEqual(0, countSpans(core, 'UPDATE Opportunity'), 'no write is attempted for a stale record');
         Assert.areEqual(
             'StaleRecord',
-            ((Map<String, Object>) completionOf(core, OpenBoxDiscountGovernance.ACTIVITY_UPDATE).get('error'))
+            ((Map<String, Object>) completionOf(core, OpportunityDiscountWriter.TOOL_NAME).get('error'))
                 .get('type')
         );
     }
@@ -352,8 +352,8 @@ private class OpenBoxDiscountGovernanceTest {
     static void salesforcePermissionFailureBlocksWriteEvenWhenOpenBoxAllows() {
         OpenBoxTestData.useDefaultSettings();
         OpenBoxCoreMock core = OpenBoxCoreMock.install();
-        Opportunity globex = OpenBoxTestData.opportunityNamed(GLOBEX_NAME);
-        OpenBoxDiscountGovernance.Outcome outcome;
+        Opportunity globex = OpportunityDiscountTestData.opportunityNamed(GLOBEX_NAME);
+        OpenBox_GovernedDiscountUpdate.Result outcome;
 
         System.runAs(OpenBoxTestData.readOnlyUser()) {
             Test.startTest();
@@ -362,12 +362,12 @@ private class OpenBoxDiscountGovernanceTest {
         }
 
         Assert.areEqual('ALLOW', outcome.decision, 'OpenBox allowed the change');
-        Assert.areEqual(OpenBoxDiscountGovernance.STATUS_PERMISSION_DENIED, outcome.status, outcome.message);
+        Assert.areEqual(OpenBoxRequestStatus.PERMISSION_DENIED, outcome.status, outcome.message);
         assertDiscount(GLOBEX_NAME, 5, 'Salesforce access must still be enforced');
         Assert.areEqual(new List<String>{ 'Allowed', 'Permission_Denied' }, OpenBoxTestData.auditOutcomes());
         Assert.areEqual(
             'PermissionDenied',
-            ((Map<String, Object>) completionOf(core, OpenBoxDiscountGovernance.ACTIVITY_UPDATE).get('error'))
+            ((Map<String, Object>) completionOf(core, OpportunityDiscountWriter.TOOL_NAME).get('error'))
                 .get('type')
         );
         assertFullyPaired(core);
@@ -377,8 +377,8 @@ private class OpenBoxDiscountGovernanceTest {
     static void userWithoutGovernedPermissionIsRefusedBeforeContactingOpenBox() {
         OpenBoxTestData.useDefaultSettings();
         OpenBoxCoreMock core = OpenBoxCoreMock.install();
-        Opportunity acme = OpenBoxTestData.opportunityNamed(ACME_NAME);
-        OpenBoxDiscountGovernance.Outcome outcome;
+        Opportunity acme = OpportunityDiscountTestData.opportunityNamed(ACME_NAME);
+        OpenBox_GovernedDiscountUpdate.Result outcome;
 
         System.runAs(OpenBoxTestData.outsiderUser()) {
             Test.startTest();
@@ -386,7 +386,7 @@ private class OpenBoxDiscountGovernanceTest {
             Test.stopTest();
         }
 
-        Assert.areEqual(OpenBoxDiscountGovernance.STATUS_PERMISSION_DENIED, outcome.status);
+        Assert.areEqual(OpenBoxRequestStatus.PERMISSION_DENIED, outcome.status);
         Assert.areEqual(0, core.requests.size(), 'no governance session is opened for an unentitled caller');
         assertDiscount(ACME_NAME, 5);
     }
@@ -398,8 +398,8 @@ private class OpenBoxDiscountGovernanceTest {
         OpenBoxTestData.useDefaultSettings();
         OpenBoxCoreMock core = OpenBoxCoreMock.install()
             .onSpanStarted('UPDATE', 'block', 'Behavioral violation: discount writes require a locked read');
-        Opportunity acme = OpenBoxTestData.opportunityNamed(ACME_NAME);
-        OpenBoxDiscountGovernance.Outcome outcome;
+        Opportunity acme = OpportunityDiscountTestData.opportunityNamed(ACME_NAME);
+        OpenBox_GovernedDiscountUpdate.Result outcome;
 
         System.runAs(OpenBoxTestData.agentUser()) {
             Test.startTest();
@@ -407,14 +407,14 @@ private class OpenBoxDiscountGovernanceTest {
             Test.stopTest();
         }
 
-        Assert.areEqual(OpenBoxDiscountGovernance.STATUS_BLOCKED, outcome.status);
+        Assert.areEqual(OpenBoxRequestStatus.BLOCKED, outcome.status);
         assertDiscount(ACME_NAME, 5);
         Assert.areEqual(2, countSpans(core, 'UPDATE Opportunity'), 'the refused write span is still closed');
         Map<String, Object> closed = lastSpan(core, 'UPDATE Opportunity');
         Assert.areEqual('completed', closed.get('stage'));
         Assert.areEqual('ERROR', ((Map<String, Object>) closed.get('status')).get('code'));
         Assert.isNull(closed.get('rowcount'), 'a refused write touched no rows');
-        Assert.areEqual('failed', completionOf(core, OpenBoxDiscountGovernance.ACTIVITY_UPDATE).get('status'));
+        Assert.areEqual('failed', completionOf(core, OpportunityDiscountWriter.TOOL_NAME).get('status'));
         assertFullyPaired(core);
     }
 
@@ -423,8 +423,8 @@ private class OpenBoxDiscountGovernanceTest {
         OpenBoxTestData.useDefaultSettings();
         OpenBoxCoreMock core = OpenBoxCoreMock.install()
             .onSpanStarted('UPDATE', 'require_approval', 'Behavioral violation: sales-ops sign-off missing');
-        Opportunity acme = OpenBoxTestData.opportunityNamed(ACME_NAME);
-        OpenBoxDiscountGovernance.Outcome outcome;
+        Opportunity acme = OpportunityDiscountTestData.opportunityNamed(ACME_NAME);
+        OpenBox_GovernedDiscountUpdate.Result outcome;
 
         System.runAs(OpenBoxTestData.agentUser()) {
             Test.startTest();
@@ -432,7 +432,7 @@ private class OpenBoxDiscountGovernanceTest {
             Test.stopTest();
         }
 
-        Assert.areEqual(OpenBoxDiscountGovernance.STATUS_PENDING, outcome.status);
+        Assert.areEqual(OpenBoxRequestStatus.PENDING, outcome.status);
         Assert.areEqual('REQUIRE_APPROVAL', outcome.decision);
         assertDiscount(ACME_NAME, 5);
         assertSpansPaired(core);
@@ -456,15 +456,14 @@ private class OpenBoxDiscountGovernanceTest {
                 'reasons' => new List<Object>()
             }
         };
-        OpenBoxCoreMock.install().onActivityStarted(OpenBoxDiscountGovernance.ACTIVITY_UPDATE, redacted);
-        Opportunity acme = OpenBoxTestData.opportunityNamed(ACME_NAME);
+        OpenBoxCoreMock.install().onActivityStarted(OpportunityDiscountWriter.TOOL_NAME, redacted);
+        Opportunity acme = OpportunityDiscountTestData.opportunityNamed(ACME_NAME);
 
         System.runAs(OpenBoxTestData.agentUser()) {
             Test.startTest();
-            new OpenBoxDiscountGovernance()
-                .requestDiscounts(
-                    new List<OpenBoxDiscountGovernance.DiscountRequest>{
-                        OpenBoxTestData.request(acme.Id, 10, 'Call jane.doe@example.com to confirm')
+            OpenBox_GovernedDiscountUpdate.updateDiscount(
+                    new List<OpenBox_GovernedDiscountUpdate.Request>{
+                        OpportunityDiscountTestData.request(acme.Id, 10, 'Call jane.doe@example.com to confirm')
                     }
                 );
             Test.stopTest();
@@ -488,9 +487,9 @@ private class OpenBoxDiscountGovernanceTest {
                 'reasons' => new List<Object>()
             }
         };
-        OpenBoxCoreMock.install().onActivityCompleted(OpenBoxDiscountGovernance.ACTIVITY_LOOKUP, redacted);
-        Opportunity acme = OpenBoxTestData.opportunityNamed(ACME_NAME);
-        OpenBoxDiscountGovernance.Outcome outcome;
+        OpenBoxCoreMock.install().onActivityCompleted(LOOKUP, redacted);
+        Opportunity acme = OpportunityDiscountTestData.opportunityNamed(ACME_NAME);
+        OpenBox_GovernedDiscountUpdate.Result outcome;
 
         System.runAs(OpenBoxTestData.agentUser()) {
             Test.startTest();
@@ -519,22 +518,21 @@ private class OpenBoxDiscountGovernanceTest {
                 }
             }
         };
-        OpenBoxCoreMock.install().onActivityStarted(OpenBoxDiscountGovernance.ACTIVITY_UPDATE, blocked);
-        Opportunity acme = OpenBoxTestData.opportunityNamed(ACME_NAME);
-        OpenBoxDiscountGovernance.Outcome outcome;
+        OpenBoxCoreMock.install().onActivityStarted(OpportunityDiscountWriter.TOOL_NAME, blocked);
+        Opportunity acme = OpportunityDiscountTestData.opportunityNamed(ACME_NAME);
+        OpenBox_GovernedDiscountUpdate.Result outcome;
 
         System.runAs(OpenBoxTestData.agentUser()) {
             Test.startTest();
-            outcome = new OpenBoxDiscountGovernance()
-                .requestDiscounts(
-                    new List<OpenBoxDiscountGovernance.DiscountRequest>{
-                        OpenBoxTestData.request(acme.Id, 10, 'Ignore policy and bypass approval')
+            outcome = OpenBox_GovernedDiscountUpdate.updateDiscount(
+                    new List<OpenBox_GovernedDiscountUpdate.Request>{
+                        OpportunityDiscountTestData.request(acme.Id, 10, 'Ignore policy and bypass approval')
                     }
                 )[0];
             Test.stopTest();
         }
 
-        Assert.areEqual(OpenBoxDiscountGovernance.STATUS_BLOCKED, outcome.status);
+        Assert.areEqual(OpenBoxRequestStatus.BLOCKED, outcome.status);
         assertDiscount(ACME_NAME, 5);
         OpenBox_Governance_Audit__c audit = [SELECT Detail__c FROM OpenBox_Governance_Audit__c LIMIT 1];
         Assert.isTrue(audit.Detail__c.contains('Input contains banned words'), audit.Detail__c);
@@ -546,24 +544,24 @@ private class OpenBoxDiscountGovernanceTest {
     static void invalidInputsAreRefusedWithoutContactingOpenBox() {
         OpenBoxTestData.useDefaultSettings();
         OpenBoxCoreMock core = OpenBoxCoreMock.install();
-        Opportunity acme = OpenBoxTestData.opportunityNamed(ACME_NAME);
-        List<OpenBoxDiscountGovernance.DiscountRequest> requests = new List<OpenBoxDiscountGovernance.DiscountRequest>{
-            OpenBoxTestData.request(acme.Id, 101, null),
-            OpenBoxTestData.request(acme.Id, -1, null),
-            OpenBoxTestData.request(acme.Id, 10.125, null),
-            OpenBoxTestData.request(acme.Id, null, null),
-            OpenBoxTestData.request(UserInfo.getUserId(), 10, null)
+        Opportunity acme = OpportunityDiscountTestData.opportunityNamed(ACME_NAME);
+        List<OpenBox_GovernedDiscountUpdate.Request> requests = new List<OpenBox_GovernedDiscountUpdate.Request>{
+            OpportunityDiscountTestData.request(acme.Id, 101, null),
+            OpportunityDiscountTestData.request(acme.Id, -1, null),
+            OpportunityDiscountTestData.request(acme.Id, 10.125, null),
+            OpportunityDiscountTestData.request(acme.Id, null, null),
+            OpportunityDiscountTestData.request(UserInfo.getUserId(), 10, null)
         };
-        List<OpenBoxDiscountGovernance.Outcome> outcomes;
+        List<OpenBox_GovernedDiscountUpdate.Result> outcomes;
 
         System.runAs(OpenBoxTestData.agentUser()) {
             Test.startTest();
-            outcomes = new OpenBoxDiscountGovernance().requestDiscounts(requests);
+            outcomes = OpenBox_GovernedDiscountUpdate.updateDiscount(requests);
             Test.stopTest();
         }
 
-        for (OpenBoxDiscountGovernance.Outcome outcome : outcomes) {
-            Assert.areEqual(OpenBoxDiscountGovernance.STATUS_FAILED, outcome.status, outcome.message);
+        for (OpenBox_GovernedDiscountUpdate.Result outcome : outcomes) {
+            Assert.areEqual(OpenBoxRequestStatus.FAILED, outcome.status, outcome.message);
             Assert.isFalse(outcome.changed);
         }
         Assert.areEqual(0, core.requests.size());
@@ -574,21 +572,21 @@ private class OpenBoxDiscountGovernanceTest {
     static void requestsBeyondPerTransactionLimitAreRefused() {
         OpenBoxTestData.useDefaultSettings();
         OpenBoxCoreMock.install();
-        Opportunity acme = OpenBoxTestData.opportunityNamed(ACME_NAME);
-        List<OpenBoxDiscountGovernance.DiscountRequest> requests = new List<OpenBoxDiscountGovernance.DiscountRequest>();
+        Opportunity acme = OpportunityDiscountTestData.opportunityNamed(ACME_NAME);
+        List<OpenBox_GovernedDiscountUpdate.Request> requests = new List<OpenBox_GovernedDiscountUpdate.Request>();
         for (Integer i = 0; i < 6; i++) {
-            requests.add(OpenBoxTestData.request(acme.Id, 6 + i, null));
+            requests.add(OpportunityDiscountTestData.request(acme.Id, 6 + i, null));
         }
-        List<OpenBoxDiscountGovernance.Outcome> outcomes;
+        List<OpenBox_GovernedDiscountUpdate.Result> outcomes;
 
         System.runAs(OpenBoxTestData.agentUser()) {
             Test.startTest();
-            outcomes = new OpenBoxDiscountGovernance().requestDiscounts(requests);
+            outcomes = OpenBox_GovernedDiscountUpdate.updateDiscount(requests);
             Test.stopTest();
         }
 
         Assert.areEqual(6, outcomes.size());
-        Assert.areEqual(OpenBoxDiscountGovernance.STATUS_FAILED, outcomes[5].status);
+        Assert.areEqual(OpenBoxRequestStatus.FAILED, outcomes[5].status);
         Assert.isTrue(outcomes[5].reason.contains('At most 5'), outcomes[5].reason);
     }
 
@@ -599,23 +597,22 @@ private class OpenBoxDiscountGovernanceTest {
     }
 
     private static void assertDiscount(String opportunityName, Decimal expected, String message) {
-        Decimal actual = OpenBoxTestData.opportunityNamed(opportunityName).Discount__c;
+        Decimal actual = OpportunityDiscountTestData.opportunityNamed(opportunityName).Discount__c;
         Assert.isTrue(actual == expected, message + ' (expected ' + expected + ', found ' + actual + ')');
     }
 
-    private static OpenBoxDiscountGovernance.Outcome governOne(Id opportunityId, Decimal discount) {
-        return new OpenBoxDiscountGovernance()
-            .requestDiscounts(
-                new List<OpenBoxDiscountGovernance.DiscountRequest>{
-                    OpenBoxTestData.request(opportunityId, discount, 'Strategic account')
+    private static OpenBox_GovernedDiscountUpdate.Result governOne(Id opportunityId, Decimal discount) {
+        return OpenBox_GovernedDiscountUpdate.updateDiscount(
+                new List<OpenBox_GovernedDiscountUpdate.Request>{
+                    OpportunityDiscountTestData.request(opportunityId, discount, 'Strategic account')
                 }
             )[0];
     }
 
     private static void assertFailsClosed(OpenBoxCoreMock core) {
         OpenBoxTestData.useDefaultSettings();
-        Opportunity acme = OpenBoxTestData.opportunityNamed(ACME_NAME);
-        OpenBoxDiscountGovernance.Outcome outcome;
+        Opportunity acme = OpportunityDiscountTestData.opportunityNamed(ACME_NAME);
+        OpenBox_GovernedDiscountUpdate.Result outcome;
 
         System.runAs(OpenBoxTestData.agentUser()) {
             Test.startTest();
@@ -624,7 +621,7 @@ private class OpenBoxDiscountGovernanceTest {
             Test.stopTest();
         }
 
-        Assert.areEqual(OpenBoxDiscountGovernance.STATUS_FAILED, outcome.status, outcome.message);
+        Assert.areEqual(OpenBoxRequestStatus.FAILED, outcome.status, outcome.message);
         Assert.areEqual('ERROR', outcome.decision);
         Assert.isFalse(outcome.changed);
         assertDiscount(ACME_NAME, 5, 'no decision means no write');
@@ -639,50 +636,29 @@ private class OpenBoxDiscountGovernanceTest {
         String expectedErrorType
     ) {
         OpenBoxTestData.useDefaultSettings();
-        Opportunity acme = OpenBoxTestData.opportunityNamed(ACME_NAME);
+        Opportunity acme = OpportunityDiscountTestData.opportunityNamed(ACME_NAME);
         OpenBox_Governed_Request__c pending = pendingRequest(acme, 25);
         OpenBoxCoreMock core = OpenBoxCoreMock.install().answerApproval(action, reason);
 
         Test.startTest();
-        OpenBoxDiscountGovernance.Outcome outcome = new OpenBoxDiscountGovernance()
-            .resolvePending(new Set<Id>{ pending.Id })[0];
+        OpenBox_GovernedDiscountUpdate.Result outcome = resolve(pending.Id);
         Test.stopTest();
 
         Assert.areEqual(expectedStatus, outcome.status);
         Assert.isFalse(outcome.changed);
         assertDiscount(ACME_NAME, 5, 'a rejected or expired approval must not write');
-        Map<String, Object> completion = completionOf(core, OpenBoxDiscountGovernance.ACTIVITY_UPDATE);
+        Map<String, Object> completion = completionOf(core, OpportunityDiscountWriter.TOOL_NAME);
         Assert.areEqual(pending.Activity_Id__c, completion.get('activity_id'));
         Assert.areEqual(expectedErrorType, ((Map<String, Object>) completion.get('error')).get('type'));
         Assert.areEqual('failed', core.eventsOfType('WorkflowCompleted')[0].get('status'));
     }
 
-    /**
-     * A request as the authorizing transaction would have left it: decided REQUIRE_APPROVAL, with
-     * the run's correlation ids recorded and nothing written.
-     */
     private static OpenBox_Governed_Request__c pendingRequest(Opportunity opportunity, Decimal discount) {
-        String requestId = UUID.randomUUID().toString();
-        OpenBox_Governed_Request__c record = new OpenBox_Governed_Request__c(
-            Request_Id__c = requestId,
-            Opportunity__c = opportunity.Id,
-            Action__c = OpenBoxDiscountGovernance.ACTION,
-            Requested_Discount__c = discount,
-            Previous_Discount__c = opportunity.Discount__c,
-            Baseline_Modstamp__c = opportunity.SystemModstamp,
-            Status__c = OpenBoxDiscountGovernance.STATUS_PENDING,
-            Decision__c = 'REQUIRE_APPROVAL',
-            Workflow_Id__c = 'salesforce-' + UserInfo.getOrganizationId() + '-' + requestId,
-            Run_Id__c = requestId,
-            Activity_Id__c = UUID.randomUUID().toString(),
-            Trace_Id__c = OpenBoxIds.newTraceId(),
-            Requested_By__c = OpenBoxTestData.agentUser().Id,
-            Approval_Expires_At__c = Datetime.now().addMinutes(30),
-            Next_Event_Sequence__c = 0,
-            Poll_Count__c = 0
-        );
-        insert record;
-        return record;
+        return OpportunityDiscountTestData.pendingRequest(opportunity, discount, OpenBoxTestData.agentUser().Id);
+    }
+
+    private static OpenBox_GovernedDiscountUpdate.Result resolve(Id requestId) {
+        return OpenBox_GovernedDiscountUpdate.toResult(new OpenBoxToolGovernance().resolve(new Set<Id>{ requestId }, false)[0]);
     }
 
     private static Map<String, Object> completionOf(OpenBoxCoreMock core, String activityType) {

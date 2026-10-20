@@ -23,7 +23,7 @@ public inherited sharing class OpenBoxAudit {
         String stage,
         String outcome,
         OpenBoxEvaluationResult decision,
-        Id opportunityId,
+        Id recordId,
         Id actorId,
         Map<String, Object> detail
     ) {
@@ -44,8 +44,7 @@ public inherited sharing class OpenBoxAudit {
             Outcome__c = outcome,
             Decision__c = decision == null ? null : decision.verdict.name(),
             Decision_Id__c = decision == null ? null : decision.governanceEventId,
-            Opportunity_Id__c = opportunityId,
-            Action__c = OpenBoxDiscountGovernance.ACTION,
+            Record_Id__c = recordId,
             Actor__c = actorId,
             Occurred_At__c = Datetime.now(),
             Detail__c = JSON.serializePretty(payload).abbreviate(MAX_DETAIL_CHARS)

@@ -7,14 +7,18 @@
  * it stops when none remain. OpenBoxApprovalPollerSchedule restarts it hourly in case the chain was
  * ever interrupted, so an approved request is never stranded.
  *
- * Execution of an approved request goes through OpenBoxDiscountGovernance.resolvePending (the
- * discount action) or OpenBoxToolGovernance.resolve (any other governed tool), which lock the
- * request row and re-check approval, expiry and the conversation's state first. Approved flows
+ * Execution of an approved request goes through OpenBoxToolGovernance.resolve, which locks the
+ * request row and re-checks approval, expiry and the conversation's state first. Approved flows
  * and standard actions are not run here: they must run as the agent's own user, so they wait as
  * Approved until the agent checks on them.
  */
 public inherited sharing class OpenBoxApprovalPoller implements Queueable, Database.AllowsCallouts {
     private static final String SIGNATURE = 'OpenBoxApprovalPoller';
+    // Approved calls the poller may run itself; flows and actions wait for the agent.
+    private static final Set<String> POLLER_TARGETS = new Set<String>{
+        OpenBoxToolGovernance.TARGET_APEX_EXECUTOR,
+        OpenBoxToolGovernance.TARGET_RECORD_WRITER
+    };
 
     /**
      * Queues the poller unless one is already queued.
@@ -32,9 +36,9 @@ public inherited sharing class OpenBoxApprovalPoller implements Queueable, Datab
             SELECT COUNT()
             FROM OpenBox_Governed_Request__c
             WHERE
-                Status__c = :OpenBoxDiscountGovernance.STATUS_PENDING
-                OR (Status__c = :OpenBoxToolGovernance.STATUS_APPROVED
-                AND Target_Type__c = :OpenBoxToolGovernance.TARGET_APEX_EXECUTOR)
+                Status__c = :OpenBoxRequestStatus.PENDING
+                OR (Status__c = :OpenBoxRequestStatus.APPROVED
+                AND Target_Type__c IN :POLLER_TARGETS)
         ];
         if (pending > 0) {
             enqueue(OpenBoxSettings.get().approvalPollIntervalMinutes);
@@ -43,33 +47,20 @@ public inherited sharing class OpenBoxApprovalPoller implements Queueable, Datab
 
     public void execute(QueueableContext context) {
         OpenBoxSettings settings = OpenBoxSettings.get();
-        List<OpenBox_Governed_Request__c> waiting = [
-            SELECT Id, Tool_Name__c
+        Set<Id> due = new Map<Id, OpenBox_Governed_Request__c>([
+            SELECT Id
             FROM OpenBox_Governed_Request__c
             WHERE
-                Status__c = :OpenBoxDiscountGovernance.STATUS_PENDING
-                OR (Status__c = :OpenBoxToolGovernance.STATUS_APPROVED
-                AND Target_Type__c = :OpenBoxToolGovernance.TARGET_APEX_EXECUTOR)
+                Status__c = :OpenBoxRequestStatus.PENDING
+                OR (Status__c = :OpenBoxRequestStatus.APPROVED
+                AND Target_Type__c IN :POLLER_TARGETS)
             ORDER BY Last_Polled_At__c ASC NULLS FIRST, CreatedDate ASC
-            LIMIT 200
-        ];
-        if (waiting.isEmpty()) {
+            LIMIT :settings.maxRequestsPerTransaction
+        ]).keySet();
+        if (due.isEmpty()) {
             return;
         }
-        // Discount requests and tool calls each write in their own commit phase, and Apex allows no
-        // callout after a write, so one kind is resolved per run: the kind that has waited longest.
-        Boolean tools = waiting[0].Tool_Name__c != null;
-        Set<Id> due = new Set<Id>();
-        for (OpenBox_Governed_Request__c row : waiting) {
-            if ((row.Tool_Name__c != null) == tools && due.size() < settings.maxRequestsPerTransaction) {
-                due.add(row.Id);
-            }
-        }
-        if (tools) {
-            new OpenBoxToolGovernance().resolve(due, false);
-        } else {
-            new OpenBoxDiscountGovernance().resolvePending(due);
-        }
+        new OpenBoxToolGovernance().resolve(due, false);
         // If resolving queued outbox events, the dispatcher holds this job's only child slot and
         // re-arms the poller when it finishes.
         ensureScheduledIfPending();

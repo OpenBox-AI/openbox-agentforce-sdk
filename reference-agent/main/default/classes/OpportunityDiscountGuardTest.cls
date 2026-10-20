@@ -8,12 +8,12 @@ private class OpportunityDiscountGuardTest {
 
     @TestSetup
     static void setup() {
-        OpenBoxTestData.createCast();
+        OpportunityDiscountTestData.createCast();
     }
 
     @IsTest
     static void agentCannotUpdateDiscountInUserMode() {
-        Opportunity acme = OpenBoxTestData.opportunityNamed(ACME_NAME);
+        Opportunity acme = OpportunityDiscountTestData.opportunityNamed(ACME_NAME);
         System.runAs(OpenBoxTestData.agentUser()) {
             try {
                 Database.update(new Opportunity(Id = acme.Id, Discount__c = 60), AccessLevel.USER_MODE);
@@ -22,18 +22,21 @@ private class OpportunityDiscountGuardTest {
                 Assert.isTrue(e.getMessage().containsIgnoreCase('inaccessible'), e.getMessage());
             }
         }
-        Assert.isTrue(OpenBoxTestData.opportunityNamed(ACME_NAME).Discount__c == 5);
+        Assert.isTrue(OpportunityDiscountTestData.opportunityNamed(ACME_NAME).Discount__c == 5);
     }
 
     @IsTest
     static void agentCannotUpdateDiscountEvenInSystemModeApex() {
-        Opportunity acme = OpenBoxTestData.opportunityNamed(ACME_NAME);
+        Opportunity acme = OpportunityDiscountTestData.opportunityNamed(ACME_NAME);
         System.runAs(OpenBoxTestData.agentUser()) {
             Database.SaveResult result = Database.update(new Opportunity(Id = acme.Id, Discount__c = 60), false);
             Assert.isFalse(result.isSuccess(), 'the guard must reject writes that bypass field security');
-            Assert.areEqual(OpportunityDiscountGuardHandler.REJECTION_MESSAGE, result.getErrors()[0].getMessage());
+            Assert.areEqual(
+                'Discount can only be changed through an OpenBox governed action.',
+                result.getErrors()[0].getMessage()
+            );
         }
-        Assert.isTrue(OpenBoxTestData.opportunityNamed(ACME_NAME).Discount__c == 5);
+        Assert.isTrue(OpportunityDiscountTestData.opportunityNamed(ACME_NAME).Discount__c == 5);
     }
 
     @IsTest
@@ -54,28 +57,28 @@ private class OpportunityDiscountGuardTest {
 
     @IsTest
     static void agentMayEditOtherFieldsFreely() {
-        Opportunity acme = OpenBoxTestData.opportunityNamed(ACME_NAME);
+        Opportunity acme = OpportunityDiscountTestData.opportunityNamed(ACME_NAME);
         System.runAs(OpenBoxTestData.agentUser()) {
             update new Opportunity(Id = acme.Id, Description = 'Next step: send proposal');
         }
-        Assert.isTrue(OpenBoxTestData.opportunityNamed(ACME_NAME).Discount__c == 5);
+        Assert.isTrue(OpportunityDiscountTestData.opportunityNamed(ACME_NAME).Discount__c == 5);
     }
 
     @IsTest
     static void administratorWithDirectEditPermissionMayEdit() {
-        Opportunity acme = OpenBoxTestData.opportunityNamed(ACME_NAME);
+        Opportunity acme = OpportunityDiscountTestData.opportunityNamed(ACME_NAME);
         System.runAs(OpenBoxTestData.adminUser()) {
             update new Opportunity(Id = acme.Id, Discount__c = 12);
         }
-        Assert.isTrue(OpenBoxTestData.opportunityNamed(ACME_NAME).Discount__c == 12);
+        Assert.isTrue(OpportunityDiscountTestData.opportunityNamed(ACME_NAME).Discount__c == 12);
     }
 
     @IsTest
     static void governedAuthorizationIsScopedToTheRecordAndRevoked() {
-        Opportunity acme = OpenBoxTestData.opportunityNamed(ACME_NAME);
+        Opportunity acme = OpportunityDiscountTestData.opportunityNamed(ACME_NAME);
         System.runAs(OpenBoxTestData.agentUser()) {
-            OpenBoxGovernedWriteContext.authorize(new Set<Id>{ acme.Id });
-            Assert.isTrue(OpenBoxGovernedWriteContext.isAuthorized(acme.Id));
+            OpenBoxGovernedWriteContext.authorize(acme.Id, new Set<String>{ 'Discount__c' });
+            Assert.isTrue(OpenBoxGovernedWriteContext.isAuthorized(acme.Id, 'Discount__c'));
             OpenBoxGovernedWriteContext.revokeAll();
             Database.SaveResult result = Database.update(new Opportunity(Id = acme.Id, Discount__c = 30), false);
             Assert.isFalse(result.isSuccess(), 'a revoked authorization must not linger');

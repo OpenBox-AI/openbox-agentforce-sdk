@@ -32,7 +32,7 @@ public inherited sharing class OpenBoxSessionCloser implements Queueable, Databa
                 AND Id NOT IN (
                     SELECT Agent_Session__c
                     FROM OpenBox_Governed_Request__c
-                    WHERE Status__c IN (:OpenBoxDiscountGovernance.STATUS_PENDING, :OpenBoxToolGovernance.STATUS_APPROVED)
+                    WHERE Status__c IN :OpenBoxRequestStatus.WAITING
                 )
             LIMIT :BATCH_SIZE
             FOR UPDATE

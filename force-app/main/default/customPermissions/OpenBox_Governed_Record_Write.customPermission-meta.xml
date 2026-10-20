@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomPermission xmlns="http://soap.sforce.com/2006/04/metadata">
+    <description>Allows the holder to request record changes through OpenBox governed record writes. OpenBox still decides every request, and Salesforce still checks object, field and record access.</description>
+    <isLicensed>false</isLicensed>
+    <label>OpenBox Governed Record Write</label>
+</CustomPermission>

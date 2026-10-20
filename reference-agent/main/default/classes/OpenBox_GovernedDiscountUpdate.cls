@@ -4,6 +4,9 @@
  * This is the only path an agent has to Opportunity.Discount__c. OpenBox decides every request
  * before anything changes: routine discounts apply immediately, forbidden ones are refused, and
  * large ones wait for a human approver in OpenBox and are applied automatically once approved.
+ *
+ * Reference implementation: a thin action over the OpenBox SDK. The change itself is described by
+ * OpportunityDiscountWriter; OpenBoxToolGovernance governs it.
  */
 public with sharing class OpenBox_GovernedDiscountUpdate {
     public class Request {
@@ -102,37 +105,49 @@ public with sharing class OpenBox_GovernedDiscountUpdate {
         category='OpenBox Governance'
     )
     public static List<Result> updateDiscount(List<Request> requests) {
-        List<OpenBoxDiscountGovernance.DiscountRequest> governed = new List<OpenBoxDiscountGovernance.DiscountRequest>();
+        List<OpenBoxToolGovernance.ToolCall> calls = new List<OpenBoxToolGovernance.ToolCall>();
         for (Request request : requests) {
-            OpenBoxDiscountGovernance.DiscountRequest item = new OpenBoxDiscountGovernance.DiscountRequest();
-            item.opportunityId = request.opportunityId;
-            item.proposedDiscount = request.proposedDiscount;
-            item.justification = request.justification;
-            item.userPrompt = request.userPrompt;
-            item.agentSessionId = request.agentSessionId;
-            governed.add(item);
+            calls.add(toolCall(request));
         }
         List<Result> results = new List<Result>();
-        for (OpenBoxDiscountGovernance.Outcome outcome : new OpenBoxDiscountGovernance().requestDiscounts(governed)) {
+        for (OpenBoxToolGovernance.Result outcome : new OpenBoxToolGovernance().governAll(calls)) {
             results.add(toResult(outcome));
         }
         return results;
     }
 
-    public static Result toResult(OpenBoxDiscountGovernance.Outcome outcome) {
+    public static OpenBoxToolGovernance.ToolCall toolCall(Request request) {
+        OpenBoxToolGovernance.ToolCall call = new OpenBoxToolGovernance.ToolCall();
+        call.toolName = OpportunityDiscountWriter.TOOL_NAME;
+        call.action = OpportunityDiscountWriter.ACTION;
+        call.writer = OpportunityDiscountWriter.class;
+        call.input = OpportunityDiscountWriter.input(request.opportunityId, request.proposedDiscount);
+        call.justification = request.justification;
+        call.userPrompt = request.userPrompt;
+        call.sessionKey = request.agentSessionId;
+        return call;
+    }
+
+    public static Result toResult(OpenBoxToolGovernance.Result outcome) {
         Result result = new Result();
         result.status = outcome.status;
-        result.changed = outcome.changed;
+        result.changed = outcome.executed;
         result.message = outcome.message;
-        result.decision = outcome.decision;
+        result.decision = outcome.verdict;
         result.reason = outcome.reason;
         result.requestNumber = outcome.requestNumber;
         result.requestId = outcome.requestId;
         result.decisionId = outcome.decisionId;
-        result.previousDiscount = outcome.previousDiscount;
-        result.requestedDiscount = outcome.requestedDiscount;
+        Object previous = outcome.previousValues?.get('Discount__c');
+        result.previousDiscount = previous == null ? null : Decimal.valueOf(String.valueOf(previous));
+        result.requestedDiscount = requestedDiscount(outcome);
         result.approvalExpiresAt = outcome.approvalExpiresAt;
-        result.opportunitySummary = outcome.opportunitySummary;
+        result.opportunitySummary = outcome.summary;
         return result;
+    }
+
+    private static Decimal requestedDiscount(OpenBoxToolGovernance.Result outcome) {
+        Object requested = outcome.changes?.get('Discount__c');
+        return requested == null ? null : Decimal.valueOf(String.valueOf(requested));
     }
 }

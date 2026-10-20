@@ -1,6 +1,7 @@
 /**
  * Agentforce action: checks on any governed call that waited for human approval in OpenBox, and
- * runs it if it was approved. Covers registered tools and the discount action alike.
+ * runs it if it was approved. Covers every governed call: registered tools, Apex executors and
+ * record writes alike.
  *
  * Runs as the agent's own user, which is what lets an approved flow or standard action run (the
  * background poller never runs those as itself). Calling it repeatedly is safe: a call runs at
@@ -31,62 +32,25 @@ public with sharing class OpenBox_CheckApproval {
 
         // Agents may only check calls their own user made.
         Map<String, OpenBox_Governed_Request__c> byReference = new Map<String, OpenBox_Governed_Request__c>();
-        Set<Id> toolIds = new Set<Id>();
-        Set<Id> discountIds = new Set<Id>();
         for (OpenBox_Governed_Request__c record : [
-            SELECT Id, Name, Request_Id__c, Tool_Name__c
+            SELECT Id, Name, Request_Id__c
             FROM OpenBox_Governed_Request__c
             WHERE (Name IN :references OR Request_Id__c IN :references) AND Requested_By__c = :UserInfo.getUserId()
         ]) {
             byReference.put(record.Name, record);
             byReference.put(record.Request_Id__c, record);
-            if (record.Tool_Name__c == null) {
-                discountIds.add(record.Id);
-            } else {
-                toolIds.add(record.Id);
-            }
         }
 
-        // Each kind writes in its own commit phase, and Apex allows no callout after a write, so one
-        // kind is resolved per call; the other is reported as it stands.
+        // Waiting calls are resolved; the others are reported as they stand.
+        Set<Id> ids = new Set<Id>();
+        for (OpenBox_Governed_Request__c record : byReference.values()) {
+            ids.add(record.Id);
+        }
         Map<String, OpenBox_GovernedAction.Result> byRequestId = new Map<String, OpenBox_GovernedAction.Result>();
-        if (!toolIds.isEmpty()) {
-            for (OpenBoxToolGovernance.Result outcome : new OpenBoxToolGovernance().resolve(toolIds, true)) {
+        if (!ids.isEmpty()) {
+            for (OpenBoxToolGovernance.Result outcome : new OpenBoxToolGovernance().resolve(ids, true)) {
                 byRequestId.put(outcome.requestId, OpenBox_GovernedAction.toResult(outcome));
             }
-        } else if (!discountIds.isEmpty()) {
-            for (OpenBoxDiscountGovernance.Outcome outcome : new OpenBoxDiscountGovernance().resolvePending(discountIds)) {
-                OpenBox_GovernedAction.Result result = new OpenBox_GovernedAction.Result();
-                result.status = outcome.status;
-                result.executed = outcome.changed;
-                result.message = outcome.message;
-                result.verdict = outcome.decision;
-                result.reason = outcome.reason;
-                result.requestNumber = outcome.requestNumber;
-                byRequestId.put(outcome.requestId, result);
-            }
-        }
-        // Calls that were no longer waiting are reported as they stand.
-        Set<Id> settled = new Set<Id>();
-        for (OpenBox_Governed_Request__c record : byReference.values()) {
-            if (!byRequestId.containsKey(record.Request_Id__c)) {
-                settled.add(record.Id);
-            }
-        }
-        for (OpenBox_Governed_Request__c record : [
-            SELECT Name, Request_Id__c, Status__c, Decision__c, Reason__c, Tool_Name__c, Tool_Output__c
-            FROM OpenBox_Governed_Request__c
-            WHERE Id IN :settled
-        ]) {
-            OpenBox_GovernedAction.Result result = new OpenBox_GovernedAction.Result();
-            result.status = record.Status__c;
-            result.executed = record.Status__c == OpenBoxDiscountGovernance.STATUS_EXECUTED;
-            result.verdict = record.Decision__c;
-            result.reason = record.Reason__c;
-            result.requestNumber = record.Name;
-            result.outputJson = record.Tool_Output__c;
-            result.message = 'Request ' + record.Name + ' is ' + record.Status__c.replace('_', ' ').toLowerCase() + '.';
-            byRequestId.put(record.Request_Id__c, result);
         }
 
         List<OpenBox_GovernedAction.Result> results = new List<OpenBox_GovernedAction.Result>();

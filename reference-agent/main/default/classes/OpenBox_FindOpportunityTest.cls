@@ -2,7 +2,7 @@
 private class OpenBox_FindOpportunityTest {
     @TestSetup
     static void setup() {
-        OpenBoxTestData.createCast();
+        OpportunityDiscountTestData.createCast();
     }
 
     private static OpenBox_FindOpportunity.Result find(String query) {
@@ -18,7 +18,7 @@ private class OpenBox_FindOpportunityTest {
             result = find('Acme');
         }
         Assert.areEqual(1, result.matchCount);
-        Assert.areEqual(OpenBoxTestData.opportunityNamed('Acme renewal').Id, result.opportunityId);
+        Assert.areEqual(OpportunityDiscountTestData.opportunityNamed('Acme renewal').Id, result.opportunityId);
         Assert.isTrue(result.matches.contains('discount 5%'), result.matches);
     }
 

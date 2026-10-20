@@ -152,7 +152,7 @@ public without sharing class OpenBoxTurnGovernance {
             WHERE
                 Agent_Session__c = :record.Id
                 AND Run_Id__c = :record.Run_Id__c
-                AND Status__c IN (:OpenBoxDiscountGovernance.STATUS_PENDING, :OpenBoxToolGovernance.STATUS_APPROVED)
+                AND Status__c IN :OpenBoxRequestStatus.WAITING
         ];
         Boolean closing = waiting == 0;
         if (closing) {

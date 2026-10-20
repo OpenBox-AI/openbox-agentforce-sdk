@@ -3,6 +3,9 @@
  * human, resolve it now. An approved request is applied in this call (after the same locked
  * re-read and access checks as an immediate change); a rejected or expired one is closed with no
  * change. Calling it repeatedly is safe: a request is applied at most once.
+ *
+ * Reference implementation: resolution is the OpenBox SDK's single approval path
+ * (OpenBoxToolGovernance.resolve), the same one every other governed call uses.
  */
 public with sharing class OpenBox_CheckDiscountApproval {
     public class Request {
@@ -44,10 +47,7 @@ public with sharing class OpenBox_CheckDiscountApproval {
             requests.size()
         );
         if (!referenceByRequestId.isEmpty()) {
-            for (
-                OpenBoxDiscountGovernance.Outcome outcome : new OpenBoxDiscountGovernance()
-                    .resolvePending(referenceByRequestId.keySet())
-            ) {
+            for (OpenBoxToolGovernance.Result outcome : new OpenBoxToolGovernance().resolve(referenceByRequestId.keySet(), true)) {
                 Integer position = positionByReference.get(referenceByRequestKey.get(outcome.requestId));
                 if (position != null) {
                     results[position] = OpenBox_GovernedDiscountUpdate.toResult(outcome);

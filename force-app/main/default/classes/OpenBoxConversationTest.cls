@@ -5,11 +5,11 @@
  * Agentforce runs every action in its own transaction. A test method is one transaction, and Apex
  * allows no callout after a write, so each test makes one governed call that reaches OpenBox;
  * earlier turns of the conversation are seeded as data before Test.startTest(). Behaviour against
- * a real OpenBox is covered by scripts/e2e/run-live.mjs.
+ * a real OpenBox is covered by scripts/e2e/run-live.mjs. Governed record writes are covered by
+ * OpenBoxRecordWriteTest; the helpers here are public for the reference agent's tests.
  */
 @IsTest
 public class OpenBoxConversationTest {
-    private static final String ACME_NAME = 'Acme renewal';
     private static final String KEY = 'conversation-test-key';
     private static final String RUN_ID = 'run-conversation-test';
 
@@ -146,7 +146,7 @@ public class OpenBoxConversationTest {
             Test.stopTest();
         }
         Assert.isFalse(later.allowed);
-        Assert.areEqual(OpenBoxDiscountGovernance.STATUS_HALTED, tool.status);
+        Assert.areEqual(OpenBoxRequestStatus.HALTED, tool.status);
         Assert.isFalse(executorRan);
         Assert.areEqual(callsAfterHalt, core.requests.size(), 'a halted conversation is refused locally');
         Assert.areEqual(1, core.eventsOfType('WorkflowFailed').size());
@@ -272,7 +272,7 @@ public class OpenBoxConversationTest {
             result = new OpenBoxToolGovernance().govern(echoCall(KEY, false));
             Test.stopTest();
         }
-        Assert.areEqual(OpenBoxDiscountGovernance.STATUS_EXECUTED, result.status, why(result.reason));
+        Assert.areEqual(OpenBoxRequestStatus.EXECUTED, result.status, why(result.reason));
         Assert.isTrue(executorRan);
         Assert.areEqual('hello', result.output.get('echo'));
         Map<String, Object> started = core.eventsOfType('ActivityStarted')[0];
@@ -308,7 +308,7 @@ public class OpenBoxConversationTest {
             result = new OpenBoxToolGovernance().govern(echoCall(null, true));
             Test.stopTest();
         }
-        Assert.areEqual(OpenBoxDiscountGovernance.STATUS_EXECUTED, result.status, why(result.reason));
+        Assert.areEqual(OpenBoxRequestStatus.EXECUTED, result.status, why(result.reason));
         Assert.areEqual('[REDACTED]', result.output.get('echo'), 'the agent sees the redacted output');
     }
 
@@ -322,7 +322,7 @@ public class OpenBoxConversationTest {
             blocked = new OpenBoxToolGovernance().govern(echoCall(null, false));
             Test.stopTest();
         }
-        Assert.areEqual(OpenBoxDiscountGovernance.STATUS_BLOCKED, blocked.status, why(blocked.reason));
+        Assert.areEqual(OpenBoxRequestStatus.BLOCKED, blocked.status, why(blocked.reason));
         Assert.isFalse(executorRan, 'a blocked tool never runs');
         Assert.isTrue(blocked.message.contains('Not for this agent'));
         Assert.areEqual('failed', core.eventsOfType('ActivityCompleted')[0].get('status'), 'the refused activity is closed');
@@ -340,7 +340,7 @@ public class OpenBoxConversationTest {
             failed = new OpenBoxToolGovernance().govern(call);
             Test.stopTest();
         }
-        Assert.areEqual(OpenBoxDiscountGovernance.STATUS_FAILED, failed.status, why(failed.reason));
+        Assert.areEqual(OpenBoxRequestStatus.FAILED, failed.status, why(failed.reason));
         Assert.areEqual(0, [SELECT COUNT() FROM Task WHERE Subject = 'written before failing'], 'a failed tool is rolled back');
     }
 
@@ -354,7 +354,7 @@ public class OpenBoxConversationTest {
             pending = new OpenBoxToolGovernance().govern(echoCall(null, false));
             Test.stopTest();
         }
-        Assert.areEqual(OpenBoxDiscountGovernance.STATUS_PENDING, pending.status, why(pending.reason));
+        Assert.areEqual(OpenBoxRequestStatus.PENDING, pending.status, why(pending.reason));
         Assert.isFalse(executorRan);
         Assert.isTrue(pending.message.contains('run automatically'), pending.message);
         Assert.isNotNull(pending.requestNumber);
@@ -372,7 +372,7 @@ public class OpenBoxConversationTest {
         Test.stopTest();
 
         OpenBox_Governed_Request__c row = [SELECT Status__c, Tool_Output__c, Error__c FROM OpenBox_Governed_Request__c];
-        Assert.areEqual(OpenBoxDiscountGovernance.STATUS_EXECUTED, row.Status__c, why(row.Error__c));
+        Assert.areEqual(OpenBoxRequestStatus.EXECUTED, row.Status__c, why(row.Error__c));
         Assert.isTrue(executorRan);
         Assert.isTrue(row.Tool_Output__c.contains('"resumed":true'), row.Tool_Output__c);
     }
@@ -388,139 +388,22 @@ public class OpenBoxConversationTest {
         OpenBoxToolGovernance.Result rejected = new OpenBoxToolGovernance().resolve(new Set<Id>{ requestId }, false)[0];
         Test.stopTest();
 
-        Assert.areEqual(OpenBoxDiscountGovernance.STATUS_REJECTED, rejected.status, rejected.message);
+        Assert.areEqual(OpenBoxRequestStatus.REJECTED, rejected.status, rejected.message);
         Assert.isFalse(executorRan);
     }
 
     @IsTest
-    static void registeredFlowRunsThroughTheGovernedAction() {
+    static void unregisteredToolIsRefusedWithoutContactingOpenBox() {
         OpenBoxTestData.useDefaultSettings();
         OpenBoxCoreMock core = OpenBoxCoreMock.install();
-        Opportunity acme = OpenBoxTestData.opportunityNamed(ACME_NAME);
-        OpenBox_GovernedAction.Result ran;
         OpenBox_GovernedAction.Result unknown;
-        OpenBox_GovernedAction.Result badJson;
         System.runAs(OpenBoxTestData.agentUser()) {
             Test.startTest();
             unknown = runTool('delete_everything', '{}');
-            badJson = runTool('log_opportunity_note', 'not json');
-            ran = runTool('log_opportunity_note', noteJson(acme.Id, 'First call'));
             Test.stopTest();
         }
-        Assert.areEqual(OpenBoxDiscountGovernance.STATUS_EXECUTED, ran.status, why(ran.reason));
-        Assert.isTrue(ran.executed);
-        Assert.areEqual(1, [SELECT COUNT() FROM Task WHERE WhatId = :acme.Id AND Subject = 'First call']);
-        Assert.areEqual('log_opportunity_note', core.eventsOfType('ActivityStarted')[0].get('activity_type'));
         Assert.areEqual('Not_Registered', unknown.status);
-        Assert.areEqual('Failed', badJson.status);
-    }
-
-    @IsTest
-    static void approvedFlowWaitsForTheAgentThenRunsOnce() {
-        OpenBoxTestData.useDefaultSettings();
-        Opportunity acme = OpenBoxTestData.opportunityNamed(ACME_NAME);
-        String requestNumber;
-        System.runAs(OpenBoxTestData.agentUser()) {
-            Id sessionId = seedSession('Log a note', 'discount_management').Id;
-            Id requestId = seedPendingTool(
-                'log_opportunity_note',
-                OpenBoxToolGovernance.TARGET_FLOW,
-                'OpenBox_Log_Opportunity_Note',
-                noteJson(acme.Id, 'Second call'),
-                sessionId
-            );
-            requestNumber = [SELECT Name FROM OpenBox_Governed_Request__c WHERE Id = :requestId].Name;
-        }
-        OpenBoxCoreMock.install().answerApproval('allow', null);
-
-        Test.startTest();
-        // The background poller learns of the approval but never runs a flow as itself.
-        new OpenBoxApprovalPoller().execute(null);
-        Assert.areEqual(OpenBoxToolGovernance.STATUS_APPROVED, [SELECT Status__c FROM OpenBox_Governed_Request__c].Status__c);
-        Assert.areEqual(0, [SELECT COUNT() FROM Task WHERE Subject = 'Second call']);
-
-        OpenBox_GovernedAction.Result checked;
-        OpenBox_GovernedAction.Result again;
-        OpenBox_GovernedAction.Result missing;
-        System.runAs(OpenBoxTestData.agentUser()) {
-            checked = check(requestNumber);
-            again = check(requestNumber);
-            missing = check('GR-999999');
-        }
-        Test.stopTest();
-
-        Assert.areEqual(OpenBoxDiscountGovernance.STATUS_EXECUTED, checked.status, checked.message);
-        Assert.areEqual(OpenBoxDiscountGovernance.STATUS_EXECUTED, again.status, 'a checked call runs once');
-        Assert.areEqual('Not_Found', missing.status);
-        Assert.areEqual(1, [SELECT COUNT() FROM Task WHERE Subject = 'Second call']);
-    }
-
-    // ── Existing actions inside a conversation ──────────────────────────────────────────────
-
-    @IsTest
-    static void lookupIsAGovernedToolOfTheConversation() {
-        OpenBoxTestData.useDefaultSettings();
-        seedSession('Find Acme', 'discount_management');
-        OpenBoxCoreMock core = OpenBoxCoreMock.install();
-        OpenBox_FindOpportunity.Result found;
-        System.runAs(OpenBoxTestData.agentUser()) {
-            Test.startTest();
-            OpenBox_FindOpportunity.Request lookup = new OpenBox_FindOpportunity.Request();
-            lookup.nameQuery = 'Acme';
-            lookup.conversationKey = KEY;
-            found = OpenBox_FindOpportunity.find(new List<OpenBox_FindOpportunity.Request>{ lookup })[0];
-            Test.stopTest();
-        }
-        Assert.areEqual(OpenBoxTestData.opportunityNamed(ACME_NAME).Id, found.opportunityId, found.matches);
-        Assert.areEqual(
-            new List<String>{ 'ActivityStarted:find_opportunity', 'ActivityCompleted:find_opportunity' },
-            core.eventSequence()
-        );
-    }
-
-    @IsTest
-    static void discountJoinsTheConversationAndLeavesItOpen() {
-        OpenBoxTestData.useDefaultSettings();
-        seedSession('Set Acme to 10%', 'discount_management');
-        OpenBoxCoreMock core = OpenBoxCoreMock.install();
-        Opportunity acme = OpenBoxTestData.opportunityNamed(ACME_NAME);
-        OpenBoxDiscountGovernance.Outcome outcome;
-        System.runAs(OpenBoxTestData.agentUser()) {
-            Test.startTest();
-            OpenBoxDiscountGovernance.DiscountRequest request = OpenBoxTestData.request(acme.Id, 10, 'Renewal');
-            request.agentSessionId = KEY;
-            outcome = new OpenBoxDiscountGovernance()
-                .requestDiscounts(new List<OpenBoxDiscountGovernance.DiscountRequest>{ request })[0];
-            Test.stopTest();
-        }
-        Assert.areEqual(OpenBoxDiscountGovernance.STATUS_EXECUTED, outcome.status, outcome.message);
-        Assert.areEqual(0, core.eventsOfType('WorkflowStarted').size(), 'the discount joins the conversation');
-        Assert.areEqual(0, core.eventsOfType('WorkflowCompleted').size(), 'and leaves it open');
-        Assert.areEqual(0, core.eventsOfType('SignalReceived').size(), 'the message was already governed by the gate');
-        for (Map<String, Object> event : core.evaluated) {
-            Assert.areEqual(RUN_ID, event.get('run_id'), 'every event is in the conversation\'s run');
-        }
-        Assert.areEqual(sessionRow().Id, [SELECT Agent_Session__c FROM OpenBox_Governed_Request__c].Agent_Session__c);
-    }
-
-    @IsTest
-    static void discountInAHaltedConversationIsRefused() {
-        OpenBoxTestData.useDefaultSettings();
-        OpenBox_Agent_Session__c session = seedSession('Bad request', 'discount_management');
-        session.Status__c = OpenBoxAgentSession.STATUS_HALTED;
-        update session;
-        OpenBoxCoreMock core = OpenBoxCoreMock.install();
-        Opportunity acme = OpenBoxTestData.opportunityNamed(ACME_NAME);
-        OpenBoxDiscountGovernance.Outcome outcome;
-        System.runAs(OpenBoxTestData.agentUser()) {
-            Test.startTest();
-            OpenBoxDiscountGovernance.DiscountRequest request = OpenBoxTestData.request(acme.Id, 10, 'Renewal');
-            request.agentSessionId = KEY;
-            outcome = new OpenBoxDiscountGovernance()
-                .requestDiscounts(new List<OpenBoxDiscountGovernance.DiscountRequest>{ request })[0];
-            Test.stopTest();
-        }
-        Assert.areEqual(OpenBoxDiscountGovernance.STATUS_HALTED, outcome.status);
+        Assert.isFalse(unknown.executed);
         Assert.areEqual(0, core.requests.size());
     }
 
@@ -569,27 +452,27 @@ public class OpenBoxConversationTest {
         return call;
     }
 
-    private static OpenBox_GovernedAction.Result runTool(String name, String inputJson) {
+    public static OpenBox_GovernedAction.Result runTool(String name, String inputJson) {
         OpenBox_GovernedAction.Request request = new OpenBox_GovernedAction.Request();
         request.toolName = name;
         request.inputJson = inputJson;
         return OpenBox_GovernedAction.run(new List<OpenBox_GovernedAction.Request>{ request })[0];
     }
 
-    private static OpenBox_GovernedAction.Result check(String reference) {
+    public static OpenBox_GovernedAction.Result check(String reference) {
         OpenBox_CheckApproval.Request request = new OpenBox_CheckApproval.Request();
         request.requestReference = reference;
         return OpenBox_CheckApproval.check(new List<OpenBox_CheckApproval.Request>{ request })[0];
     }
 
-    private static String noteJson(Id opportunityId, String subject) {
+    public static String noteJson(Id opportunityId, String subject) {
         return JSON.serialize(
             new Map<String, Object>{ 'opportunityId' => opportunityId, 'subject' => subject, 'note' => 'Logged by the agent' }
         );
     }
 
     /** A conversation as an earlier turn would have left it: one allowed message. */
-    private static OpenBox_Agent_Session__c seedSession(String lastMessage, String subagent) {
+    public static OpenBox_Agent_Session__c seedSession(String lastMessage, String subagent) {
         OpenBox_Agent_Session__c session = new OpenBox_Agent_Session__c(
             Session_Key__c = KEY,
             Workflow_Id__c = 'salesforce-conversation-test',
@@ -612,7 +495,7 @@ public class OpenBoxConversationTest {
     }
 
     /** A tool call as the authorizing transaction would have left it: waiting for approval. */
-    private static Id seedPendingTool(String toolName, String targetType, String targetName, String inputJson, Id sessionId) {
+    public static Id seedPendingTool(String toolName, String targetType, String targetName, String inputJson, Id sessionId) {
         OpenBox_Governed_Request__c request = new OpenBox_Governed_Request__c(
             Request_Id__c = OpenBoxIds.newRequestId(),
             Action__c = toolName,
@@ -620,7 +503,7 @@ public class OpenBoxConversationTest {
             Tool_Input__c = inputJson,
             Target_Type__c = targetType,
             Target_Name__c = targetName,
-            Status__c = OpenBoxDiscountGovernance.STATUS_PENDING,
+            Status__c = OpenBoxRequestStatus.PENDING,
             Decision__c = 'REQUIRE_APPROVAL',
             Workflow_Id__c = 'salesforce-conversation-test',
             Run_Id__c = RUN_ID,
@@ -635,7 +518,7 @@ public class OpenBoxConversationTest {
         return request.Id;
     }
 
-    private static String why(String reason) {
+    public static String why(String reason) {
         return reason == null ? '' : reason;
     }
 
