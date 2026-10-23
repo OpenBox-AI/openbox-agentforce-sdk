@@ -7,11 +7,18 @@
  * it stops when none remain. OpenBoxApprovalPollerSchedule restarts it hourly in case the chain was
  * ever interrupted, so an approved request is never stranded.
  *
- * Execution of an approved request goes through OpenBoxDiscountGovernance.resolvePending, which
- * locks the request row and re-checks approval, expiry, record state and permissions first.
+ * Execution of an approved request goes through OpenBoxToolGovernance.resolve, which locks the
+ * request row and re-checks approval, expiry and the conversation's state first. Approved flows
+ * and standard actions are not run here: they must run as the agent's own user, so they wait as
+ * Approved until the agent checks on them.
  */
 public inherited sharing class OpenBoxApprovalPoller implements Queueable, Database.AllowsCallouts {
     private static final String SIGNATURE = 'OpenBoxApprovalPoller';
+    // Approved calls the poller may run itself; flows and actions wait for the agent.
+    private static final Set<String> POLLER_TARGETS = new Set<String>{
+        OpenBoxToolGovernance.TARGET_APEX_EXECUTOR,
+        OpenBoxToolGovernance.TARGET_RECORD_WRITER
+    };
 
     /**
      * Queues the poller unless one is already queued.
@@ -28,7 +35,10 @@ public inherited sharing class OpenBoxApprovalPoller implements Queueable, Datab
         Integer pending = [
             SELECT COUNT()
             FROM OpenBox_Governed_Request__c
-            WHERE Status__c = :OpenBoxDiscountGovernance.STATUS_PENDING
+            WHERE
+                Status__c = :OpenBoxRequestStatus.PENDING
+                OR (Status__c = :OpenBoxRequestStatus.APPROVED
+                AND Target_Type__c IN :POLLER_TARGETS)
         ];
         if (pending > 0) {
             enqueue(OpenBoxSettings.get().approvalPollIntervalMinutes);
@@ -37,19 +47,20 @@ public inherited sharing class OpenBoxApprovalPoller implements Queueable, Datab
 
     public void execute(QueueableContext context) {
         OpenBoxSettings settings = OpenBoxSettings.get();
-        Map<Id, OpenBox_Governed_Request__c> due = new Map<Id, OpenBox_Governed_Request__c>(
-            [
-                SELECT Id
-                FROM OpenBox_Governed_Request__c
-                WHERE Status__c = :OpenBoxDiscountGovernance.STATUS_PENDING
-                ORDER BY Last_Polled_At__c ASC NULLS FIRST, CreatedDate ASC
-                LIMIT :settings.maxRequestsPerTransaction
-            ]
-        );
+        Set<Id> due = new Map<Id, OpenBox_Governed_Request__c>([
+            SELECT Id
+            FROM OpenBox_Governed_Request__c
+            WHERE
+                Status__c = :OpenBoxRequestStatus.PENDING
+                OR (Status__c = :OpenBoxRequestStatus.APPROVED
+                AND Target_Type__c IN :POLLER_TARGETS)
+            ORDER BY Last_Polled_At__c ASC NULLS FIRST, CreatedDate ASC
+            LIMIT :settings.maxRequestsPerTransaction
+        ]).keySet();
         if (due.isEmpty()) {
             return;
         }
-        new OpenBoxDiscountGovernance().resolvePending(due.keySet());
+        new OpenBoxToolGovernance().resolve(due, false);
         // If resolving queued outbox events, the dispatcher holds this job's only child slot and
         // re-arms the poller when it finishes.
         ensureScheduledIfPending();

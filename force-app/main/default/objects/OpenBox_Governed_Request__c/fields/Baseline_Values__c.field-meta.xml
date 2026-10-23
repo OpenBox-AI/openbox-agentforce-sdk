@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Baseline_Values__c</fullName>
+    <description>The changed fields' values when the request was authorized, as JSON. A different value before the write marks the request stale.</description>
+    <label>Baseline Values</label>
+    <length>131072</length>
+    <visibleLines>3</visibleLines>
+    <type>LongTextArea</type>
+</CustomField>

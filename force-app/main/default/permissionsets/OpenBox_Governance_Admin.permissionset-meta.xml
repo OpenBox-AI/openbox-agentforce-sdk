@@ -5,6 +5,10 @@
         <enabled>true</enabled>
     </classAccesses>
     <classAccesses>
+        <apexClass>OpenBoxAgentSession</apexClass>
+        <enabled>true</enabled>
+    </classAccesses>
+    <classAccesses>
         <apexClass>OpenBoxApprovalPoller</apexClass>
         <enabled>true</enabled>
     </classAccesses>
@@ -33,10 +37,6 @@
         <enabled>true</enabled>
     </classAccesses>
     <classAccesses>
-        <apexClass>OpenBoxDiscountGovernance</apexClass>
-        <enabled>true</enabled>
-    </classAccesses>
-    <classAccesses>
         <apexClass>OpenBoxEvaluationResult</apexClass>
         <enabled>true</enabled>
     </classAccesses>
@@ -46,6 +46,10 @@
     </classAccesses>
     <classAccesses>
         <apexClass>OpenBoxException</apexClass>
+        <enabled>true</enabled>
+    </classAccesses>
+    <classAccesses>
+        <apexClass>OpenBoxFieldGuard</apexClass>
         <enabled>true</enabled>
     </classAccesses>
     <classAccesses>
@@ -69,6 +73,18 @@
         <enabled>true</enabled>
     </classAccesses>
     <classAccesses>
+        <apexClass>OpenBoxRecordWriter</apexClass>
+        <enabled>true</enabled>
+    </classAccesses>
+    <classAccesses>
+        <apexClass>OpenBoxRequestStatus</apexClass>
+        <enabled>true</enabled>
+    </classAccesses>
+    <classAccesses>
+        <apexClass>OpenBoxSessionCloser</apexClass>
+        <enabled>true</enabled>
+    </classAccesses>
+    <classAccesses>
         <apexClass>OpenBoxSettings</apexClass>
         <enabled>true</enabled>
     </classAccesses>
@@ -77,7 +93,19 @@
         <enabled>true</enabled>
     </classAccesses>
     <classAccesses>
+        <apexClass>OpenBoxToolContext</apexClass>
+        <enabled>true</enabled>
+    </classAccesses>
+    <classAccesses>
+        <apexClass>OpenBoxToolGovernance</apexClass>
+        <enabled>true</enabled>
+    </classAccesses>
+    <classAccesses>
         <apexClass>OpenBoxTransportException</apexClass>
+        <enabled>true</enabled>
+    </classAccesses>
+    <classAccesses>
+        <apexClass>OpenBoxTurnGovernance</apexClass>
         <enabled>true</enabled>
     </classAccesses>
     <classAccesses>
@@ -89,37 +117,222 @@
         <enabled>true</enabled>
     </classAccesses>
     <classAccesses>
-        <apexClass>OpenBox_CheckDiscountApproval</apexClass>
+        <apexClass>OpenBox_CheckApproval</apexClass>
         <enabled>true</enabled>
     </classAccesses>
     <classAccesses>
-        <apexClass>OpenBox_FindOpportunity</apexClass>
+        <apexClass>OpenBox_EndTurn</apexClass>
         <enabled>true</enabled>
     </classAccesses>
     <classAccesses>
-        <apexClass>OpenBox_GovernedDiscountUpdate</apexClass>
+        <apexClass>OpenBox_GovernMessage</apexClass>
         <enabled>true</enabled>
     </classAccesses>
     <classAccesses>
-        <apexClass>OpportunityDiscountGuardHandler</apexClass>
+        <apexClass>OpenBox_GovernedAction</apexClass>
         <enabled>true</enabled>
     </classAccesses>
     <customPermissions>
         <enabled>true</enabled>
-        <name>OpenBox_Discount_Direct_Edit</name>
+        <name>OpenBox_Governed_Record_Write</name>
     </customPermissions>
     <customPermissions>
         <enabled>true</enabled>
-        <name>OpenBox_Governed_Discount_Update</name>
+        <name>OpenBox_Guarded_Field_Direct_Edit</name>
     </customPermissions>
-    <description>Assign to administrators who operate the OpenBox integration. Grants audit visibility, direct Discount__c edit and the approval poller controls.</description>
+    <description>Assign to administrators who operate the OpenBox integration. Grants audit visibility, direct edit of guarded fields and the approval poller controls.</description>
     <externalCredentialPrincipalAccesses>
         <enabled>true</enabled>
         <externalCredentialPrincipal>OpenBox_Core_Auth-AgentRuntimeKey</externalCredentialPrincipal>
     </externalCredentialPrincipalAccesses>
     <fieldPermissions>
-        <editable>true</editable>
-        <field>Opportunity.Discount__c</field>
+        <editable>false</editable>
+        <field>OpenBox_Agent_Session__c.Closed_At__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>OpenBox_Agent_Session__c.Current_Subagent__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>OpenBox_Agent_Session__c.Goal__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>OpenBox_Agent_Session__c.Last_Activity_At__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>OpenBox_Agent_Session__c.Last_Prompt_At__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>OpenBox_Agent_Session__c.Last_Prompt_Hash__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>OpenBox_Agent_Session__c.Last_Prompt_Reason__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>OpenBox_Agent_Session__c.Last_Prompt_Verdict__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>OpenBox_Agent_Session__c.Next_Event_Sequence__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>OpenBox_Agent_Session__c.Requested_By__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>OpenBox_Agent_Session__c.Run_Id__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>OpenBox_Agent_Session__c.Session_Key__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>OpenBox_Agent_Session__c.Started_At__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>OpenBox_Agent_Session__c.Status__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>OpenBox_Agent_Session__c.Trace_Id__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>OpenBox_Agent_Session__c.Turn_Count__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>OpenBox_Agent_Session__c.Workflow_Id__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>OpenBox_Event_Outbox__c.Agent_Session__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>OpenBox_Event_Outbox__c.Attempts__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>OpenBox_Event_Outbox__c.Event_Type__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>OpenBox_Event_Outbox__c.Governed_Request__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>OpenBox_Event_Outbox__c.Last_Error__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>OpenBox_Event_Outbox__c.Payload__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>OpenBox_Event_Outbox__c.Sent_At__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>OpenBox_Event_Outbox__c.Sequence__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>OpenBox_Event_Outbox__c.Status__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>OpenBox_Governance_Audit__c.Action__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>OpenBox_Governance_Audit__c.Actor__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>OpenBox_Governance_Audit__c.Agent_Session__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>OpenBox_Governance_Audit__c.Decision_Id__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>OpenBox_Governance_Audit__c.Decision__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>OpenBox_Governance_Audit__c.Detail__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>OpenBox_Governance_Audit__c.Governed_Request__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>OpenBox_Governance_Audit__c.Occurred_At__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>OpenBox_Governance_Audit__c.Outcome__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>OpenBox_Governance_Audit__c.Record_Id__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>OpenBox_Governance_Audit__c.Request_Id__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>OpenBox_Governance_Audit__c.Stage__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
@@ -139,6 +352,11 @@
     </fieldPermissions>
     <fieldPermissions>
         <editable>false</editable>
+        <field>OpenBox_Governed_Request__c.Agent_Session__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
         <field>OpenBox_Governed_Request__c.Approval_Expires_At__c</field>
         <readable>true</readable>
     </fieldPermissions>
@@ -150,6 +368,11 @@
     <fieldPermissions>
         <editable>false</editable>
         <field>OpenBox_Governed_Request__c.Baseline_Modstamp__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>OpenBox_Governed_Request__c.Baseline_Values__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
@@ -194,11 +417,6 @@
     </fieldPermissions>
     <fieldPermissions>
         <editable>false</editable>
-        <field>OpenBox_Governed_Request__c.Opportunity__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>false</editable>
         <field>OpenBox_Governed_Request__c.Policy_Id__c</field>
         <readable>true</readable>
     </fieldPermissions>
@@ -209,12 +427,12 @@
     </fieldPermissions>
     <fieldPermissions>
         <editable>false</editable>
-        <field>OpenBox_Governed_Request__c.Previous_Discount__c</field>
+        <field>OpenBox_Governed_Request__c.Reason__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
         <editable>false</editable>
-        <field>OpenBox_Governed_Request__c.Reason__c</field>
+        <field>OpenBox_Governed_Request__c.Record_Id__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
@@ -229,17 +447,37 @@
     </fieldPermissions>
     <fieldPermissions>
         <editable>false</editable>
-        <field>OpenBox_Governed_Request__c.Requested_Discount__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>false</editable>
         <field>OpenBox_Governed_Request__c.Run_Id__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
         <editable>false</editable>
         <field>OpenBox_Governed_Request__c.Status__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>OpenBox_Governed_Request__c.Target_Name__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>OpenBox_Governed_Request__c.Target_Type__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>OpenBox_Governed_Request__c.Tool_Input__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>OpenBox_Governed_Request__c.Tool_Name__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>OpenBox_Governed_Request__c.Tool_Output__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
@@ -252,111 +490,16 @@
         <field>OpenBox_Governed_Request__c.Workflow_Id__c</field>
         <readable>true</readable>
     </fieldPermissions>
-    <fieldPermissions>
-        <editable>false</editable>
-        <field>OpenBox_Governance_Audit__c.Action__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>false</editable>
-        <field>OpenBox_Governance_Audit__c.Actor__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>false</editable>
-        <field>OpenBox_Governance_Audit__c.Decision_Id__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>false</editable>
-        <field>OpenBox_Governance_Audit__c.Decision__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>false</editable>
-        <field>OpenBox_Governance_Audit__c.Detail__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>false</editable>
-        <field>OpenBox_Governance_Audit__c.Governed_Request__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>false</editable>
-        <field>OpenBox_Governance_Audit__c.Occurred_At__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>false</editable>
-        <field>OpenBox_Governance_Audit__c.Opportunity_Id__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>false</editable>
-        <field>OpenBox_Governance_Audit__c.Outcome__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>false</editable>
-        <field>OpenBox_Governance_Audit__c.Request_Id__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>false</editable>
-        <field>OpenBox_Governance_Audit__c.Stage__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>false</editable>
-        <field>OpenBox_Event_Outbox__c.Attempts__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>false</editable>
-        <field>OpenBox_Event_Outbox__c.Event_Type__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>false</editable>
-        <field>OpenBox_Event_Outbox__c.Governed_Request__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>false</editable>
-        <field>OpenBox_Event_Outbox__c.Last_Error__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>false</editable>
-        <field>OpenBox_Event_Outbox__c.Payload__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>false</editable>
-        <field>OpenBox_Event_Outbox__c.Sent_At__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>false</editable>
-        <field>OpenBox_Event_Outbox__c.Sequence__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
-    <fieldPermissions>
-        <editable>false</editable>
-        <field>OpenBox_Event_Outbox__c.Status__c</field>
-        <readable>true</readable>
-    </fieldPermissions>
     <hasActivationRequired>false</hasActivationRequired>
     <label>OpenBox Governance Admin</label>
     <objectPermissions>
         <allowCreate>false</allowCreate>
         <allowDelete>false</allowDelete>
-        <allowEdit>true</allowEdit>
+        <allowEdit>false</allowEdit>
         <allowRead>true</allowRead>
         <modifyAllRecords>false</modifyAllRecords>
-        <object>Opportunity</object>
-        <viewAllRecords>false</viewAllRecords>
+        <object>OpenBox_Agent_Session__c</object>
+        <viewAllRecords>true</viewAllRecords>
     </objectPermissions>
     <objectPermissions>
         <allowCreate>false</allowCreate>
@@ -364,7 +507,7 @@
         <allowEdit>false</allowEdit>
         <allowRead>true</allowRead>
         <modifyAllRecords>false</modifyAllRecords>
-        <object>OpenBox_Governed_Request__c</object>
+        <object>OpenBox_Event_Outbox__c</object>
         <viewAllRecords>true</viewAllRecords>
     </objectPermissions>
     <objectPermissions>
@@ -382,7 +525,7 @@
         <allowEdit>false</allowEdit>
         <allowRead>true</allowRead>
         <modifyAllRecords>false</modifyAllRecords>
-        <object>OpenBox_Event_Outbox__c</object>
+        <object>OpenBox_Governed_Request__c</object>
         <viewAllRecords>true</viewAllRecords>
     </objectPermissions>
     <objectPermissions>

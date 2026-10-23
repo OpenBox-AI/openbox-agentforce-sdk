@@ -1,6 +1,7 @@
 /**
  * Hourly safety net for approval polling. Restarts the OpenBoxApprovalPoller chain in case it was
- * ever interrupted (for example by a platform limit), so an approved request is never stranded.
+ * ever interrupted (for example by a platform limit), so an approved request is never stranded, and
+ * closes agent conversations that went idle (OpenBoxSessionCloser).
  * The platform does not allow one class to be both Queueable and Schedulable, hence this class.
  */
 public inherited sharing class OpenBoxApprovalPollerSchedule implements Schedulable {
@@ -21,5 +22,6 @@ public inherited sharing class OpenBoxApprovalPollerSchedule implements Schedula
 
     public void execute(SchedulableContext context) {
         OpenBoxApprovalPoller.ensureScheduled();
+        OpenBoxSessionCloser.ensureScheduled();
     }
 }

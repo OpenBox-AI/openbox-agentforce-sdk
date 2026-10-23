@@ -75,6 +75,13 @@ public class OpenBoxCoreMock implements HttpCalloutMock {
         return script('span|' + operation + '|started', verdict, reason, null);
     }
 
+    /**
+     * Scripts the verdict for SignalReceived events of a signal name (for example user_prompt).
+     */
+    public OpenBoxCoreMock onSignal(String signalName, String verdict, String reason) {
+        return script('SignalReceived|' + signalName, verdict, reason, null);
+    }
+
     public OpenBoxCoreMock onWorkflowStarted(String verdict, String reason) {
         return script('WorkflowStarted|', verdict, reason, null);
     }

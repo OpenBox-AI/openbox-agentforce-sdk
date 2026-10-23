@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Current_Subagent__c</fullName>
+    <description>The subagent the agent last handled a message in.</description>
+    <label>Current Subagent</label>
+    <length>255</length>
+    <required>false</required>
+    <type>Text</type>
+</CustomField>

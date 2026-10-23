@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Read_Only__c</fullName>
+    <description>The tool changes no data: its completion is sent synchronously so output guardrails apply before the agent sees the result.</description>
+    <label>Read Only</label>
+    <defaultValue>false</defaultValue>
+    <type>Checkbox</type>
+    <fieldManageability>SubscriberControlled</fieldManageability>
+</CustomField>

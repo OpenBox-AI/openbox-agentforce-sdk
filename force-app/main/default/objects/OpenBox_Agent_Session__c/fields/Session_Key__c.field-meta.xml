@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Session_Key__c</fullName>
+    <description>Conversation key the agent carries between turns; minted by OpenBox governance on the first message.</description>
+    <externalId>true</externalId>
+    <label>Session Key</label>
+    <length>64</length>
+    <required>false</required>
+    <unique>true</unique>
+    <caseSensitive>true</caseSensitive>
+    <type>Text</type>
+</CustomField>

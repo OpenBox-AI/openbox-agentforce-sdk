@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Tool_Name__c</fullName>
+    <description>The name the agent uses and OpenBox sees as activity_type.</description>
+    <label>Tool Name</label>
+    <length>80</length>
+    <required>false</required>
+    <type>Text</type>
+    <fieldManageability>SubscriberControlled</fieldManageability>
+</CustomField>

@@ -2,9 +2,9 @@
 //
 //   node scripts/salesforce/create-agent-user.mjs [--target-org <alias>]
 //
-// The user carries the Einstein Agent license (no interactive login) and the
-// OpenBox_Governed_Agent permission set: it may invoke the governed discount actions and read
-// Opportunity.Discount__c, but it holds no edit right on the field, so OpenBox decides every change.
+// The user carries the Einstein Agent license (no interactive login), the SDK's OpenBox_Governed_Agent
+// permission set and the reference agent's OpenBox_Sales_Agent: it may invoke the governed actions and
+// read Opportunity.Discount__c, but it holds no edit right on the field, so OpenBox decides every change.
 // Idempotent: an existing agent user is reused. Prints the username for the Agent Script config.
 
 import { loadEnv, saveEnv } from '../lib/env.mjs';
@@ -47,9 +47,10 @@ for (PermissionSetGroup runtimeGroup : [SELECT Id FROM PermissionSetGroup WHERE 
         grants.add(new PermissionSetAssignment(AssigneeId = agent.Id, PermissionSetGroupId = runtimeGroup.Id));
     }
 }
-PermissionSet governed = [SELECT Id FROM PermissionSet WHERE Name = 'OpenBox_Governed_Agent' LIMIT 1];
-if ([SELECT COUNT() FROM PermissionSetAssignment WHERE AssigneeId = :agent.Id AND PermissionSetId = :governed.Id] == 0) {
-    grants.add(new PermissionSetAssignment(AssigneeId = agent.Id, PermissionSetId = governed.Id));
+for (PermissionSet governed : [SELECT Id FROM PermissionSet WHERE Name IN ('OpenBox_Governed_Agent', 'OpenBox_Sales_Agent')]) {
+    if ([SELECT COUNT() FROM PermissionSetAssignment WHERE AssigneeId = :agent.Id AND PermissionSetId = :governed.Id] == 0) {
+        grants.add(new PermissionSetAssignment(AssigneeId = agent.Id, PermissionSetId = governed.Id));
+    }
 }
 insert grants;
 System.debug(LoggingLevel.ERROR, 'OBX|' + JSON.serialize(new Map<String, Object>{ 'id' => agent.Id, 'username' => username, 'created' => existing.isEmpty() }));`,
@@ -57,4 +58,4 @@ System.debug(LoggingLevel.ERROR, 'OBX|' + JSON.serialize(new Map<String, Object>
 );
 const agent = JSON.parse(line);
 saveEnv({ SF_AGENT_USERNAME: agent.username });
-console.log(`agent user ${agent.created ? 'created' : 'exists'}: ${agent.username} (${agent.id}); Agentforce service-agent runtime and OpenBox_Governed_Agent assigned`);
+console.log(`agent user ${agent.created ? 'created' : 'exists'}: ${agent.username} (${agent.id}); Agentforce service-agent runtime, OpenBox_Governed_Agent and OpenBox_Sales_Agent assigned`);

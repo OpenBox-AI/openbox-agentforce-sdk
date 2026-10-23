@@ -107,9 +107,27 @@ async function drainOutbox(requestId, timeoutMs = 180000) {
 
 // ── OpenBox helpers ──────────────────────────────────────────────────────────────────────
 
+/**
+ * Where OpenBox stored a request. A request on its own is its own OpenBox session (run id = request
+ * id); a request the agent made inside a governed conversation is a step of the conversation's
+ * session, found by the conversation key and run id.
+ */
+function correlation(requestId) {
+  const [record] = soql(
+    `SELECT Run_Id__c, Agent_Session__r.Session_Key__c FROM OpenBox_Governed_Request__c WHERE Request_Id__c = '${requestId}'`,
+  );
+  const sessionKey = record?.Agent_Session__r?.Session_Key__c;
+  return { runId: record?.Run_Id__c ?? requestId, sessionKey, key: sessionKey ?? requestId, conversation: Boolean(sessionKey) };
+}
+
 async function session(requestId, { attempts = 12 } = {}) {
+  // Every turn of a conversation is its own OpenBox run under the conversation's workflow, so the
+  // request's own run is the one to check.
+  const { key, runId } = correlation(requestId);
   for (let i = 0; i < attempts; i++) {
-    const [match] = (await platform.findSessions(agentId, requestId)).filter((s) => s.workflow_id?.endsWith(requestId));
+    const [match] = (await platform.findSessions(agentId, key, 50)).filter(
+      (s) => s.workflow_id?.endsWith(key) && s.run_id === runId,
+    );
     if (match) {
       const rows = await platform.sessionLogs(agentId, match.id);
       if (rows.length) return { stored: match, rows };
@@ -120,8 +138,9 @@ async function session(requestId, { attempts = 12 } = {}) {
 }
 
 async function decide(requestId, action) {
+  const { runId } = correlation(requestId);
   for (let i = 0; i < 12; i++) {
-    const pending = (await platform.pendingApprovals(agentId)).find((row) => row.run_id === requestId);
+    const pending = (await platform.pendingApprovals(agentId)).find((row) => row.run_id === runId);
     if (pending) {
       await platform.decideApproval(agentId, pending.id, action);
       return pending;
@@ -149,6 +168,7 @@ function expectEqual(actual, expected, label) {
 
 async function expectPairedSession(requestId, options = {}) {
   const { stored, rows } = await session(requestId);
+  // A turn's run is closed once the reply is sent, or once its waiting call is resolved.
   const verification = verifySession(rows, options);
   expect(verification.ok, `pairing violations: ${verification.problems.join('; ')}\n${renderSession(rows)}`);
   return { stored, rows, verification };
@@ -356,6 +376,7 @@ const scenarios = [
     async run() {
       // Drives the governance library directly to issue an UPDATE span with no preceding
       // SELECT ... FOR UPDATE, the exact sequence the rule forbids. No data is written.
+      resetDiscount(OPP.routine);
       const [line] = runApex(
         `OpenBoxClient client = new OpenBoxClient();
 OpenBoxSettings s = OpenBoxSettings.get();

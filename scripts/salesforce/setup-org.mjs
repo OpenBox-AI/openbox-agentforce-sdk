@@ -3,7 +3,7 @@
 //   node scripts/salesforce/setup-org.mjs [--target-org <alias>] [--skip-deploy]
 //
 // 1. Deploys force-app and the reference agent, and runs the package's Apex tests.
-// 2. Assigns OpenBox_Governance_Admin to the operating admin.
+// 2. Assigns OpenBox_Governance_Admin and the reference agent's OpenBox_Sales_Admin to the operating admin.
 // 3. Stores the OpenBox runtime key in the External Credential.
 // 4. Seeds the demo Opportunities used by the live test suite.
 // 5. Installs the hourly approval-poller safety net.
@@ -50,15 +50,17 @@ if (!process.argv.includes('--skip-deploy')) {
   });
 }
 
-step('assign OpenBox_Governance_Admin to the operating user', () => {
-  try {
-    sfJson(['org', 'assign', 'permset', '--name', 'OpenBox_Governance_Admin', ...orgArgs]);
-    return 'assigned';
-  } catch (error) {
-    if (/duplicate/i.test(error.message)) return 'already assigned';
-    throw error;
-  }
-});
+for (const permissionSet of ['OpenBox_Governance_Admin', 'OpenBox_Sales_Admin']) {
+  step(`assign ${permissionSet} to the operating user`, () => {
+    try {
+      sfJson(['org', 'assign', 'permset', '--name', permissionSet, ...orgArgs]);
+      return 'assigned';
+    } catch (error) {
+      if (/duplicate/i.test(error.message)) return 'already assigned';
+      throw error;
+    }
+  });
+}
 
 step('store the OpenBox runtime key in OpenBox_Core_Auth', () => {
   const run = spawnSync(process.execPath, [resolve(PROJECT_ROOT, 'scripts/salesforce/set-credential.mjs'), ...orgArgs], { encoding: 'utf8' });

@@ -27,6 +27,7 @@ public inherited sharing class OpenBoxEvents {
     public static final String STATUS_TERMINATED = 'terminated';
 
     public static final String SIGNAL_USER_PROMPT = 'user_prompt';
+    public static final String SIGNAL_SUBAGENT_SELECTED = 'subagent_selected';
 
     private OpenBoxEvents() {
     }
@@ -81,7 +82,20 @@ public inherited sharing class OpenBoxEvents {
     }
 
     public static Map<String, Object> signalReceived(Identity identity, String signalName, List<Object> signalArgs) {
-        Map<String, Object> event = base(identity, SIGNAL_RECEIVED, identity.signalActivityId(), signalName);
+        return signalReceived(identity, signalName, signalArgs, identity.signalActivityId());
+    }
+
+    /**
+     * A signal with its own activity_id. A conversation receives one signal per user message, and
+     * Core keys rows on (activity_id, event_type), so each turn's signal needs a distinct id.
+     */
+    public static Map<String, Object> signalReceived(
+        Identity identity,
+        String signalName,
+        List<Object> signalArgs,
+        String activityId
+    ) {
+        Map<String, Object> event = base(identity, SIGNAL_RECEIVED, activityId, signalName);
         event.put('signal_name', signalName);
         event.put('signal_args', signalArgs);
         return event;

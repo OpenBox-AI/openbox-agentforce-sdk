@@ -1,21 +1,22 @@
 /**
- * Salesforce-side authorization for a governed discount write, evaluated for the requesting user,
- * not the running user. An approved request is executed later by a background job, so the checks
- * must be answered for whoever asked, and they are re-run at execution time because permissions
- * and sharing can change while a request waits for approval.
+ * Salesforce-side authorization for a governed write, evaluated for the requesting user, not the
+ * running user. An approved request is executed later by a background job, so the checks must be
+ * answered for whoever asked, and they are re-run at execution time because permissions and
+ * sharing can change while a request waits for approval.
  *
  * An OpenBox ALLOW never overrides a failure here: both systems must agree before data changes.
  *
- * Field access: agent users hold Discount__c read-only on purpose, so no generic record action
- * can change it. Write access to the field is granted by the OpenBox_Governed_Discount_Update
- * custom permission, which only this governed path honours; read access is still required.
+ * Field access: agent users hold guarded fields read-only on purpose, so no generic record action
+ * can change them. The right to request a governed write is a custom permission (by default
+ * OpenBox_Governed_Record_Write) that only the governed path honours; read access to every changed
+ * field is still required.
  *
  * Runs without sharing because it inspects setup objects and other users' record access, which the
  * requesting user may not be able to see. It returns decisions only, never data.
  */
 public without sharing class OpenBoxAccess {
-    @TestVisible
-    private static final String GOVERNED_PERMISSION = 'OpenBox_Governed_Discount_Update';
+    /** The entitlement a governed record write requires unless its writer names another. */
+    public static final String DEFAULT_PERMISSION = 'OpenBox_Governed_Record_Write';
 
     public class Decision {
         public final Boolean allowed;
@@ -30,30 +31,38 @@ public without sharing class OpenBoxAccess {
     private OpenBoxAccess() {
     }
 
-    public static Decision canRequest(Id userId) {
+    /** Whether the user is active and holds the custom permission (none required when blank). */
+    public static Decision canRequest(Id userId, String permission) {
         if (!isActive(userId)) {
             return deny('The requesting user is inactive');
         }
-        if (!holdsCustomPermission(userId, GOVERNED_PERMISSION)) {
-            return deny('The requesting user lacks the OpenBox Governed Discount Update permission');
+        if (String.isNotBlank(permission) && !holdsCustomPermission(userId, permission)) {
+            return deny('The requesting user lacks the ' + permission + ' permission');
         }
         return allow();
     }
 
-    public static Decision canUpdateDiscount(Id userId, Id opportunityId) {
-        Decision entitlement = canRequest(userId);
+    /**
+     * Whether the user may have the fields of the record changed for them: entitlement, edit
+     * access to the object, read access to every field, and edit access to the record itself.
+     */
+    public static Decision canWrite(Id userId, String permission, SObjectType objectType, Set<String> fields, Id recordId) {
+        Decision entitlement = canRequest(userId, permission);
         if (!entitlement.allowed) {
             return entitlement;
         }
+        String objectName = objectType.getDescribe().getName();
         Set<Id> permissionSetIds = permissionSetsOf(userId);
-        if (!objectEditable(permissionSetIds)) {
-            return deny('The requesting user cannot edit Opportunity records');
+        if (!objectEditable(permissionSetIds, objectName)) {
+            return deny('The requesting user cannot edit ' + objectName + ' records');
         }
-        if (!fieldReadable(permissionSetIds)) {
-            return deny('The requesting user cannot read Opportunity.Discount__c');
+        for (String field : fields) {
+            if (!fieldReadable(permissionSetIds, objectType, field)) {
+                return deny('The requesting user cannot read ' + objectName + '.' + field);
+            }
         }
-        if (!recordEditable(userId, opportunityId)) {
-            return deny('The requesting user has no edit access to this Opportunity');
+        if (!recordEditable(userId, recordId)) {
+            return deny('The requesting user has no edit access to this ' + objectType.getDescribe().getLabel());
         }
         return allow();
     }
@@ -92,31 +101,42 @@ public without sharing class OpenBoxAccess {
             ] > 0;
     }
 
-    private static Boolean objectEditable(Set<Id> permissionSetIds) {
+    private static Boolean objectEditable(Set<Id> permissionSetIds, String objectName) {
         return [
                 SELECT COUNT()
                 FROM ObjectPermissions
-                WHERE SobjectType = 'Opportunity' AND PermissionsEdit = TRUE AND ParentId IN :permissionSetIds
+                WHERE SobjectType = :objectName AND PermissionsEdit = TRUE AND ParentId IN :permissionSetIds
             ] > 0;
     }
 
-    private static Boolean fieldReadable(Set<Id> permissionSetIds) {
+    private static Boolean fieldReadable(Set<Id> permissionSetIds, SObjectType objectType, String field) {
+        DescribeFieldResult describe = objectType.getDescribe().fields.getMap().get(field)?.getDescribe();
+        if (describe == null) {
+            return false;
+        }
+        if (!describe.isPermissionable()) {
+            // Fields without field-level security (required and system fields) are readable by
+            // anyone who can read the object.
+            return true;
+        }
+        String objectName = objectType.getDescribe().getName();
+        String qualifiedName = objectName + '.' + describe.getName();
         return [
                 SELECT COUNT()
                 FROM FieldPermissions
                 WHERE
-                    SobjectType = 'Opportunity'
-                    AND Field = 'Opportunity.Discount__c'
+                    SobjectType = :objectName
+                    AND Field = :qualifiedName
                     AND PermissionsRead = TRUE
                     AND ParentId IN :permissionSetIds
             ] > 0;
     }
 
-    private static Boolean recordEditable(Id userId, Id opportunityId) {
+    private static Boolean recordEditable(Id userId, Id recordId) {
         List<UserRecordAccess> access = [
             SELECT RecordId, HasEditAccess
             FROM UserRecordAccess
-            WHERE UserId = :userId AND RecordId = :opportunityId
+            WHERE UserId = :userId AND RecordId = :recordId
         ];
         return !access.isEmpty() && access[0].HasEditAccess;
     }

@@ -1,6 +1,7 @@
 /**
- * Test fixtures: users holding the real permission sets, Opportunities created through the
- * direct-edit path, and deterministic integration settings.
+ * Test fixtures: users holding the real permission sets, Opportunities to govern writes against,
+ * and deterministic integration settings. Governed record writes are tested on Opportunity.NextStep
+ * through OpenBoxTestWriter, so the SDK's tests need nothing outside the package.
  *
  * Setup objects (users, permission assignments) and business records are created in separate
  * System.runAs blocks to avoid mixed-DML errors.
@@ -44,8 +45,8 @@ public class OpenBoxTestData {
         }
         System.runAs(admin) {
             insert new List<Opportunity>{
-                opportunity('Acme renewal', agent.Id, 5, 'Prospecting'),
-                opportunity('Globex expansion', readOnly.Id, 5, 'Prospecting')
+                opportunity('Acme renewal', agent.Id, 'Prospecting'),
+                opportunity('Globex expansion', readOnly.Id, 'Prospecting')
             };
         }
     }
@@ -71,25 +72,16 @@ public class OpenBoxTestData {
 
     public static Opportunity opportunityNamed(String name) {
         return [
-            SELECT Id, Name, Discount__c, StageName, OwnerId, SystemModstamp
+            SELECT Id, Name, NextStep, StageName, OwnerId, SystemModstamp
             FROM Opportunity
             WHERE Name = :name
             LIMIT 1
         ];
     }
 
-    public static OpenBoxDiscountGovernance.DiscountRequest request(
-        Id opportunityId,
-        Decimal discount,
-        String justification
-    ) {
-        OpenBoxDiscountGovernance.DiscountRequest request = new OpenBoxDiscountGovernance.DiscountRequest();
-        request.opportunityId = opportunityId;
-        request.proposedDiscount = discount;
-        request.justification = justification;
-        request.userPrompt = 'Give ' + opportunityId + ' a ' + discount + '% discount';
-        request.agentSessionId = 'agent-session-test';
-        return request;
+    /** The read-only governed permission set createCast() makes, for tests that extend it. */
+    public static Id readOnlyPermissionSetId() {
+        return [SELECT Id FROM PermissionSet WHERE Name = 'OpenBox_Test_Read_Only' LIMIT 1].Id;
     }
 
     public static List<OpenBox_Governed_Request__c> governedRequests() {
@@ -103,8 +95,9 @@ public class OpenBoxTestData {
                 Decision_Id__c,
                 Reason__c,
                 Justification__c,
-                Previous_Discount__c,
-                Requested_Discount__c,
+                Record_Id__c,
+                Baseline_Values__c,
+                Tool_Input__c,
                 Workflow_Id__c,
                 Run_Id__c,
                 Activity_Id__c,
@@ -129,14 +122,14 @@ public class OpenBoxTestData {
         return outcomes;
     }
 
-    private static Opportunity opportunity(String name, Id ownerId, Decimal discount, String stage) {
+    private static Opportunity opportunity(String name, Id ownerId, String stage) {
         return new Opportunity(
             Name = name,
             OwnerId = ownerId,
             StageName = stage,
             CloseDate = Date.today().addDays(30),
             Amount = 120000,
-            Discount__c = discount,
+            NextStep = 'Send proposal',
             Description = 'Primary contact jane.doe@example.com, +1 415 555 0100'
         );
     }
@@ -186,7 +179,7 @@ public class OpenBoxTestData {
         List<FieldPermissions> readable = new List<FieldPermissions>();
         for (
             String field : new List<String>{
-                'Opportunity.Discount__c',
+                'Opportunity.NextStep',
                 'Opportunity.Amount',
                 'Opportunity.Description'
             }
@@ -205,7 +198,7 @@ public class OpenBoxTestData {
         CustomPermission governed = [
             SELECT Id
             FROM CustomPermission
-            WHERE DeveloperName = :OpenBoxAccess.GOVERNED_PERMISSION
+            WHERE DeveloperName = :OpenBoxAccess.DEFAULT_PERMISSION
             LIMIT 1
         ];
         insert new SetupEntityAccess(ParentId = permissionSet.Id, SetupEntityId = governed.Id);

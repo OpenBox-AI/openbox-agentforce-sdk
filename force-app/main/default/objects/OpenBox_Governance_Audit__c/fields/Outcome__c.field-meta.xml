@@ -77,6 +77,16 @@
                 <default>false</default>
                 <label>Guardrail Violation</label>
             </value>
+                <value>
+                <fullName>Tool_Failed</fullName>
+                <default>false</default>
+                <label>Tool Failed</label>
+            </value>
+                <value>
+                <fullName>Output_Withheld</fullName>
+                <default>false</default>
+                <label>Output Withheld</label>
+            </value>
         </valueSetDefinition>
     </valueSet>
     <type>Picklist</type>
