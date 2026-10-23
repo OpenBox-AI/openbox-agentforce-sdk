@@ -40,7 +40,6 @@ change it only through a governed write. Both sides keep a correlated audit of w
 - [Operating it](#operating-it)
 - [Testing](#testing)
 - [Repository layout](#repository-layout)
-- [Limitations](#limitations)
 
 ## Highlights
 
@@ -582,13 +581,3 @@ sf package version create --package OpenBoxGovernance --installation-key-bypass 
 │   └── e2e/run-live.mjs           # end-to-end suite against a real org and OpenBox
 └── docs/                          # architecture page
 ```
-
-## Limitations
-
-- **What Agentforce does not expose.** Two things the LangChain-based OpenBox SDKs report have no hook
-  here: the model's own calls (prompt and completion) and the agent's final reply.
-- **Messages Salesforce refuses first.** Messages that Salesforce's own safety layer refuses before the
-  agent script runs (for example "ignore previous instructions") never reach OpenBox. They are refused
-  anyway.
-- **Listing.** The package is unlocked. An AgentExchange listing needs a managed package under an OpenBox
-  namespace and the Salesforce security review.
