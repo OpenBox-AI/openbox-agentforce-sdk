@@ -140,7 +140,7 @@ flowchart TB
     gov["<b>OpenBoxToolGovernance</b><br/>Decide phase (callouts only),<br/>then one commit phase (all DML)"]:::component
     guard["<b>OpenBoxFieldGuard</b><br/><small>Trigger helper</small><br/>Only governed writes change<br/>a guarded field"]:::component
     access["<b>OpenBoxAccess</b><br/>Salesforce permission checks"]:::component
-    run["<b>OpenBoxGovernedRun</b><br/>Event order; pairs every<br/>started with its completed"]:::component
+    run["<b>OpenBoxGovernedRun</b><br/>Event order, pairs every<br/>started with its completed"]:::component
     events["<b>OpenBoxEvents, OpenBoxSpan</b><br/>OpenBox SDK payloads"]:::component
     client["<b>OpenBoxClient</b><br/><small>HTTP</small><br/>Retry once, fail closed"]:::component
     wid["<b>OpenBoxWorkloadIdentity</b><br/>Bootstrap, certificate-signed JWT,<br/>cached workload token"]:::component
@@ -247,7 +247,7 @@ sequenceDiagram
   Approver->>Dash: Approve the request
   Dash->>Core: Record the decision
   Poller->>Apex: resolve(request)
-  Apex->>Apex: Lock the row; it must still be Pending_Approval
+  Apex->>Apex: Lock the row, which must still be Pending_Approval
   Apex->>Core: POST /api/v3/governance/approval
   Core-->>Apex: approved, rejected, expired or pending
 
