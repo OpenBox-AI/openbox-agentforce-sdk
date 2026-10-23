@@ -44,7 +44,7 @@ public inherited sharing class OpenBoxFieldGuard {
             SObject previous = oldRecords == null || record.Id == null ? null : oldRecords.get(record.Id);
             for (SObjectField field : fields) {
                 Object value = record.get(field);
-                Boolean changed = previous == null ? value != null : value != previous.get(field);
+                Boolean changed = previous == null ? value != null : differs(value, previous.get(field));
                 if (!changed) {
                     continue;
                 }
@@ -60,6 +60,14 @@ public inherited sharing class OpenBoxFieldGuard {
                 }
             }
         }
+    }
+
+    /** Apex compares Strings with == and != ignoring case; a guarded text field must not. */
+    private static Boolean differs(Object value, Object previous) {
+        if (value instanceof String && previous instanceof String) {
+            return !((String) value).equals((String) previous);
+        }
+        return value != previous;
     }
 
     private static Boolean holdsDirectEdit(String permission) {

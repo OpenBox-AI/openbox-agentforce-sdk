@@ -20,6 +20,17 @@ private class OpenBoxFieldGuardTest {
     }
 
     @IsTest
+    static void caseOnlyChangeIsRejected() {
+        OpenBoxFieldGuard.directEditOverride = false;
+        Opportunity before = existing('Send proposal');
+        Opportunity after = new Opportunity(Id = before.Id, NextStep = 'SEND PROPOSAL');
+
+        OpenBoxFieldGuard.enforce(new List<SObject>{ after }, new Map<Id, SObject>{ before.Id => before }, GUARDED);
+
+        Assert.isTrue(after.hasErrors(), 'a change of letter case is still a change');
+    }
+
+    @IsTest
     static void unchangedAndUnguardedFieldsPass() {
         OpenBoxFieldGuard.directEditOverride = false;
         Opportunity before = existing('Send proposal');
