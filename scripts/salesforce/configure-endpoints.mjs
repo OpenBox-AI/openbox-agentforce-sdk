@@ -68,7 +68,7 @@ try {
   );
   cpSync(join(source, 'objects', 'OpenBox_Settings__mdt'), join(target, 'objects', 'OpenBox_Settings__mdt'), { recursive: true });
 
-  sfJson(['project', 'deploy', 'start', '--source-dir', 'force-app', '--test-level', 'NoTestRun', ...orgArgs], { cwd: workspace });
+  sfJson(['project', 'deploy', 'start', '--source-dir', 'force-app', '--test-level', 'NoTestRun', '--ignore-conflicts', ...orgArgs], { cwd: workspace });
   console.log(`core      ${coreUrl}`);
   console.log(`identity  ${issuer}`);
 } finally {
