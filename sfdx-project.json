@@ -4,8 +4,8 @@
       "path": "force-app",
       "default": true,
       "package": "OpenBoxGovernance",
-      "versionName": "MVP",
-      "versionNumber": "1.0.0.NEXT",
+      "versionName": "Generic governed writes",
+      "versionNumber": "1.2.0.NEXT",
       "versionDescription": "OpenBox governance SDK for Agentforce: governed actions, workload identity, outbox, approvals"
     },
     {
@@ -17,7 +17,7 @@
   "sfdcLoginUrl": "https://login.salesforce.com",
   "sourceApiVersion": "66.0",
   "packageAliases": {
-    "OpenBoxGovernance": "0HogK0000004xHdSAI",
-    "OpenBoxGovernance@1.0.0-1": "04tgK000000RkgHQAS"
+    "OpenBoxGovernance": "0HogL0000004jUnSAI",
+    "OpenBoxGovernance@1.2.0-1": "04tgL000000bNthQAE"
   }
 }
