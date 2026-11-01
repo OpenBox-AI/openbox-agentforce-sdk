@@ -5,7 +5,9 @@
 //   node scripts/openbox/provision.mjs --reset-policy   also restore dashboard-edited policy rules
 //
 // Everything is created once and then belongs to the OpenBox dashboard: existing policy rules,
-// guardrails and behaviour rules are never overwritten, so they can be edited there freely.
+// guardrails and behaviour rules are never overwritten, so they can be edited there freely. On an
+// org that uses the governance control library, rules live once in the library and are attached
+// to the agent; one already in the library under the shipped name is reused, not duplicated.
 //
 // The agent's runtime key is returned once, at creation. It is written straight to .env and never
 // printed. The agent proves its identity with the Salesforce workload certificate (see below).
@@ -144,6 +146,102 @@ async function ensureBehaviorRules(agentId) {
   }
 }
 
+// Orgs on the governance control library (cutover state `final`) hold every rule once, in the
+// library, and agents attach them. A shipped control is looked up by name and created only when
+// the org has none, so a control already edited in the dashboard, or shared with other agents, is
+// reused as it is. Editing one (--reset-policy) changes it for every agent that holds it.
+const LIBRARY_KINDS = [
+  { kind: 'policy_rule', label: 'policy', nameKey: 'rule_name', controls: POLICY_RULES },
+  { kind: 'guardrail', label: 'guardrail', nameKey: 'name', controls: GUARDRAILS },
+  { kind: 'behavior_rule', label: 'behaviour', nameKey: 'rule_name', controls: BEHAVIOR_RULES },
+];
+
+// The library assigns priorities itself and appends a new control at the bottom of its kind, so
+// missing controls are created highest shipped priority first to land in the shipped order.
+const byShippedPriority = (a, b) => (b.priority ?? 0) - (a.priority ?? 0);
+
+async function ensureLibraryControls(agentId) {
+  const attached = new Set(
+    (await platform.directControls(agentId))
+      .filter((link) => link.desiredState === 'attached')
+      .map((link) => link.control?.id),
+  );
+  const held = new Map();
+  for (const { kind, label, nameKey, controls } of LIBRARY_KINDS) {
+    const ordered = kind === 'guardrail' ? controls : [...controls].sort(byShippedPriority);
+    for (const wanted of ordered) {
+      const name = wanted[nameKey];
+      let control = await platform.findControl(kind, name);
+      if (!control) {
+        if (showOnly) {
+          console.log(`${label.padEnd(10)} missing  ${name}`);
+          continue;
+        }
+        const { priority, order, ...body } = wanted;
+        control = await platform.createControl(kind, body, 'Shipped default (OpenBox for Salesforce Agentforce)');
+        console.log(`${label.padEnd(10)} created  ${name} (${control.id})`);
+      } else if (kind === 'policy_rule' && policyRuleChanged({ ...control.body, priority: wanted.priority }, wanted)) {
+        const holders = control.usage?.effectiveAgents ?? 0;
+        if (resetPolicy && !showOnly) {
+          const { priority, order, ...body } = wanted;
+          await platform.updateControl(control.id, body, 'Reset to the shipped default', control.currentVersion?.id);
+          console.log(`${label.padEnd(10)} reset    ${name} (shared control: affects ${holders} agent(s))`);
+        } else {
+          console.log(`${label.padEnd(10)} edited   ${name} (changed in the control library; kept)`);
+        }
+      } else {
+        console.log(`${label.padEnd(10)} exists   ${name}`);
+      }
+      held.set(`${kind}:${name}`, control);
+      await attach(agentId, label, name, control.id, attached);
+    }
+  }
+  await reportOrder(held);
+}
+
+async function attach(agentId, label, name, controlId, attached) {
+  if (attached.has(controlId)) {
+    console.log(`${label.padEnd(10)} attached ${name}`);
+  } else if (showOnly) {
+    console.log(`${label.padEnd(10)} detached ${name}`);
+  } else {
+    try {
+      const link = await platform.attachControl(agentId, controlId);
+      console.log(`${label.padEnd(10)} attach   ${name} (${link?.applyStatus ?? 'requested'})`);
+    } catch (error) {
+      if (error instanceof PlatformError && error.code === 'GOVERNANCE_CONTROL_ALREADY_INHERITED') {
+        console.log(`${label.padEnd(10)} inherited ${name} (held through an agent role)`);
+      } else {
+        throw error;
+      }
+    }
+  }
+}
+
+// Policy and behaviour rules are evaluated highest priority first; the first matching policy rule
+// decides. The shipped rules depend on that order (HALT before BLOCK before REQUIRE_APPROVAL), so a
+// library in which they sit in another order is reported. Shared controls are never reordered here.
+async function reportOrder(held) {
+  for (const { kind, label, nameKey, controls } of LIBRARY_KINDS) {
+    if (kind === 'guardrail') continue;
+    const shipped = [...controls].sort(byShippedPriority).map((control) => control[nameKey]);
+    const current = [];
+    for (const name of shipped) {
+      const control = held.has(`${kind}:${name}`) ? await platform.findControl(kind, name) : null;
+      if (control) current.push({ name, priority: control.priority ?? control.body?.priority ?? 0 });
+    }
+    const evaluated = [...current].sort((a, b) => b.priority - a.priority).map((control) => control.name);
+    const expected = shipped.filter((name) => evaluated.includes(name));
+    if (evaluated.join('\n') === expected.join('\n')) {
+      console.log(`${label.padEnd(10)} order    as shipped`);
+    } else {
+      console.log(`${label.padEnd(10)} ORDER    differs from the shipped order; reorder in the OpenBox control library:`);
+      expected.forEach((name, i) => console.log(`             ${i + 1}. ${name}`));
+      process.exitCode = 1;
+    }
+  }
+}
+
 async function ensureGoalAlignment(agent) {
   const current = (await platform.getAgent(agent.id)).goal_alignment_config;
   if (current) {
@@ -161,9 +259,13 @@ async function ensureGoalAlignment(agent) {
 try {
   const agent = await ensureAgent();
   if (agent) {
-    await ensurePolicyRules(agent.id);
-    await ensureGuardrails(agent.id);
-    await ensureBehaviorRules(agent.id);
+    if (await platform.controlLibraryEnabled()) {
+      await ensureLibraryControls(agent.id);
+    } else {
+      await ensurePolicyRules(agent.id);
+      await ensureGuardrails(agent.id);
+      await ensureBehaviorRules(agent.id);
+    }
     await ensureGoalAlignment(agent);
   }
 } catch (error) {

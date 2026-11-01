@@ -9,6 +9,11 @@ export class PlatformError extends Error {
     super(`${method} ${path} -> HTTP ${status}: ${String(body).slice(0, 600)}`);
     this.status = status;
     this.body = body;
+    try {
+      this.code = JSON.parse(body)?.code;
+    } catch {
+      this.code = undefined;
+    }
   }
 }
 
@@ -74,7 +79,48 @@ export class OpenBoxPlatform {
     return unwrap(await this.request('PUT', `/agent/${agentId}/goal-alignment`, { body }));
   }
 
-  // Controls
+  // Governance control library (orgs whose cutover state is `final`). Rules are authored once per
+  // organisation and attached to agents; the per-agent rule endpoints below answer 410 there.
+  // Contract: openbox-backend docs/governance-control-api-contract.md (v2).
+
+  /** False while the org is still on the per-agent rule endpoints. */
+  async controlLibraryEnabled() {
+    try {
+      await this.request('GET', '/governance/controls', { query: { kind: 'policy_rule', page: 0, perPage: 1 } });
+      return true;
+    } catch (error) {
+      if (error instanceof PlatformError && error.code === 'GOVERNANCE_CONTROL_LIBRARY_DISABLED') return false;
+      throw error;
+    }
+  }
+  /** The live control of `kind` named exactly `name`, with its current body, or null. */
+  async findControl(kind, name) {
+    for (let page = 0; ; page++) {
+      const result = unwrap(
+        await this.request('GET', '/governance/controls', { query: { kind, q: name, page, perPage: 100 } }),
+      );
+      const items = result?.items ?? [];
+      const match = items.find((control) => control.name === name);
+      if (match) return match;
+      if (items.length === 0 || (page + 1) * (result.perPage ?? 100) >= (result.total ?? 0)) return null;
+    }
+  }
+  async createControl(kind, body, changeLog) {
+    return unwrap(await this.request('POST', '/governance/controls', { body: { kind, body, change_log: changeLog } }));
+  }
+  async updateControl(controlId, body, changeLog, baseVersionId) {
+    return unwrap(
+      await this.request('PUT', `/governance/controls/${controlId}`, { body: { body, change_log: changeLog, baseVersionId } }),
+    );
+  }
+  async directControls(agentId) {
+    return rowsOf(await this.request('GET', `/agent/${agentId}/governance-controls/direct`));
+  }
+  async attachControl(agentId, controlId) {
+    return unwrap(await this.request('PUT', `/agent/${agentId}/governance-controls/${controlId}`));
+  }
+
+  // Per-agent rule endpoints (orgs not yet on the control library)
   async listPolicyRules(agentId) {
     return rowsOf(await this.request('GET', `/agent/${agentId}/policy-rule`));
   }
