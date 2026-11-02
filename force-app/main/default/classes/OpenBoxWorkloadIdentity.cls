@@ -49,6 +49,9 @@ public inherited sharing class OpenBoxWorkloadIdentity {
 
     @TestVisible
     private static Signer signerOverride;
+    // Tests trust the mock's issuer, never the org's configured one (which deployments repoint).
+    @TestVisible
+    private static String issuerOverride;
 
     private static Bootstrap cachedBootstrap;
     private static String cachedToken;
@@ -65,7 +68,7 @@ public inherited sharing class OpenBoxWorkloadIdentity {
     private OpenBoxWorkloadIdentity(OpenBoxSettings settings, OpenBox_Settings__mdt record) {
         this(
             settings,
-            record?.Identity_Issuer__c,
+            issuerOverride != null ? issuerOverride : record?.Identity_Issuer__c,
             signerOverride != null
                 ? signerOverride
                 : String.isBlank(record?.Workload_Certificate__c)

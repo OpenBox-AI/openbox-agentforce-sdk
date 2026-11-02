@@ -35,6 +35,7 @@ public class OpenBoxCoreMock implements HttpCalloutMock {
         OpenBoxCoreMock mock = new OpenBoxCoreMock();
         Test.setMock(HttpCalloutMock.class, mock);
         OpenBoxWorkloadIdentity.signerOverride = new StubSigner();
+        OpenBoxWorkloadIdentity.issuerOverride = ISSUER;
         OpenBoxWorkloadIdentity.resetCache();
         return mock;
     }
