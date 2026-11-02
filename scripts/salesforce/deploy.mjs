@@ -41,7 +41,10 @@ function deployTarget(workspace) {
 function removeSchedule() {
   const [removed] = runApex(
     `Integer removed = 0;
-for (CronTrigger job : [SELECT Id FROM CronTrigger WHERE CronJobDetail.Name LIKE 'OpenBox approval poller%']) {
+for (CronTrigger job : [
+    SELECT Id FROM CronTrigger
+    WHERE CronJobDetail.Name LIKE 'OpenBox approval poller%' OR CronJobDetail.Name LIKE 'OpenBox chain resume:%'
+]) {
     System.abortJob(job.Id);
     removed++;
 }
