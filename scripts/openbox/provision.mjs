@@ -3,6 +3,9 @@
 //   node scripts/openbox/provision.mjs          create whatever is missing
 //   node scripts/openbox/provision.mjs --show   report what exists, change nothing
 //   node scripts/openbox/provision.mjs --reset-policy   also restore dashboard-edited policy rules
+//   node scripts/openbox/provision.mjs --agent-only     register your own agent and its workload
+//                                                       identity only, without the reference agent's
+//                                                       controls; add your controls in the dashboard
 //
 // Everything is created once and then belongs to the OpenBox dashboard: existing policy rules,
 // guardrails and behaviour rules are never overwritten, so they can be edited there freely. On an
@@ -27,6 +30,7 @@ import {
 loadEnv();
 const showOnly = process.argv.includes('--show');
 const resetPolicy = process.argv.includes('--reset-policy');
+const agentOnly = process.argv.includes('--agent-only');
 const platform = new OpenBoxPlatform({
   apiKey: requireEnv('OPENBOX_ORG_API_KEY'),
   baseUrl: process.env.OPENBOX_PLATFORM_API_URL,
@@ -59,8 +63,9 @@ async function ensureAgent() {
     agent_name: AGENT_NAME,
     agent_type: 'salesforce-agentforce',
     icon: 'briefcase',
-    description:
-      'Salesforce Agentforce sales agent. Opportunity discount changes are governed by OpenBox through a native Apex action.',
+    description: agentOnly
+      ? 'Salesforce Agentforce agent. Every message and tool call is governed by OpenBox through the OpenBox Apex SDK.'
+      : 'Salesforce Agentforce sales agent. Opportunity discount changes are governed by OpenBox through a native Apex action.',
     tags: ['salesforce', 'agentforce', 'integration'],
     aivss_config: AIVSS_CONFIG,
     identity_verification: {
@@ -258,7 +263,9 @@ async function ensureGoalAlignment(agent) {
 
 try {
   const agent = await ensureAgent();
-  if (agent) {
+  if (agent && agentOnly) {
+    console.log('controls   skipped  (--agent-only: attach your own in the OpenBox dashboard)');
+  } else if (agent) {
     if (await platform.controlLibraryEnabled()) {
       await ensureLibraryControls(agent.id);
     } else {
