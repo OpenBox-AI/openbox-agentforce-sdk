@@ -5,7 +5,7 @@
       "default": true,
       "package": "OpenBoxGovernance",
       "versionName": "Generic governed writes",
-      "versionNumber": "1.2.0.NEXT",
+      "versionNumber": "1.2.1.NEXT",
       "versionDescription": "OpenBox governance SDK for Agentforce: governed actions, workload identity, outbox, approvals"
     },
     {
@@ -18,6 +18,7 @@
   "sourceApiVersion": "66.0",
   "packageAliases": {
     "OpenBoxGovernance": "0HogL0000004jUnSAI",
-    "OpenBoxGovernance@1.2.0-1": "04tgL000000bNthQAE"
+    "OpenBoxGovernance@1.2.0-1": "04tgL000000bNthQAE",
+    "OpenBoxGovernance@1.2.0-2": "04tgL000000gFKPQA2"
   }
 }

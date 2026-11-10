@@ -40,6 +40,7 @@ change it only through a governed write. Both sides keep a correlated audit of w
 - [Operating it](#operating-it)
 - [Testing](#testing)
 - [Repository layout](#repository-layout)
+- [License](#license)
 
 ## Highlights
 
@@ -320,6 +321,24 @@ and passes it to every governed action, which then join the same session.
   or action runs when the agent checks on it, as the agent's own user, never as the background job's
   user.
 
+**Declaring the actions in Agent Script.** An invocable input or output of Apex type `Id` or `Integer`
+must declare its Lightning type in the `.agent` file:
+
+```yaml
+inputs:
+    accountId: object
+        complex_data_type_name: "lightning__recordIdType"
+        label: "Account ID"
+        is_required: True
+outputs:
+    matchCount: object
+        complex_data_type_name: "lightning__integerType"
+        label: "Match Count"
+```
+
+Add a guarded field to the object's page layout as usual. The guard does not hide it; it only refuses
+changes that do not come through a governed write.
+
 ## Governing your own record writes
 
 The package carries no business logic. To put a field behind OpenBox, extend `OpenBoxRecordWriter` and
@@ -395,6 +414,10 @@ WorkflowCompleted | WorkflowFailed
   trigger calling `OpenBoxFieldGuard` rejects any change that a governed write has not authorized for
   that record and field. People can be exempted with the `OpenBox_Guarded_Field_Direct_Edit` custom
   permission. Agent instructions are not relied on.
+- **Administrators are exempt by default.** Installing the package grants its custom permissions to the
+  System Administrator profile, so administrators can edit a guarded field directly. To hold them to
+  governed writes too, remove `OpenBox_Guarded_Field_Direct_Edit` from that profile and grant it only
+  through a permission set.
 - **Both systems must agree.** An OpenBox `allow` is followed by Salesforce checks for the requesting
   user: entitlement, object edit, field read and record edit access.
 - **Fails closed.** Unreachable OpenBox, timeouts, non-2xx answers, malformed bodies, unknown verdicts
@@ -440,11 +463,16 @@ late-stage deals) and **goal alignment**.
 
 You need an org with Agentforce enabled and an OpenBox account with an agent registered for it.
 
-1. **Install the package** `OpenBoxGovernance` from the latest release:
+1. **Install the package** `OpenBoxGovernance` 1.2.0, package version ID `04tgL000000gFKPQA2`:
 
    ```bash
-   sf package install --package <package version id> --target-org <your org> --wait 30 --no-prompt
+   sf package install --package 04tgL000000gFKPQA2 --target-org <your org> --wait 30 --no-prompt
    ```
+
+   Or from a browser:
+   [production and Developer Edition](https://login.salesforce.com/packaging/installPackage.apexp?p0=04tgL000000gFKPQA2),
+   [sandbox](https://test.salesforce.com/packaging/installPackage.apexp?p0=04tgL000000gFKPQA2).
+   Every version is listed on the [releases page](https://github.com/OpenBox-AI/openbox-agentforce-sdk/releases).
 
 2. **Create the workload certificate** in the org, and register its public key on your OpenBox agent.
 3. **Store the agent's API key** in the External Credential `OpenBox_Core_Auth`.
@@ -458,6 +486,20 @@ You need an org with Agentforce enabled and an OpenBox account with an agent reg
 
 The scripts in [Running it from source](#running-it-from-source) do steps 2 to 5 for you.
 
+**The OpenBox API key the scripts use** (Organization > API Keys in the dashboard) is created with an
+explicit set of permissions. `provision.mjs` needs:
+
+| Permission | For |
+|---|---|
+| `create:agent`, `read:agent`, `update:agent` | Registering the agent, rotating its key, goal alignment |
+| `read:agent_policy`, `update:agent_policy` | Attaching policy controls |
+| `read:agent_guardrail`, `update:agent_guardrail` | Attaching guardrails |
+| `read:agent_behavior_rule`, `update:agent_behavior_rule` | Attaching behaviour rules |
+| `manage:governance_control` | Creating the shipped controls when your control library does not have them yet, and `--reset-policy` |
+
+`approvals.mjs` also needs `manage:agent_session`, and `inspect-session.mjs` needs `read:agent_session`
+and `read:agent_log`.
+
 > [!NOTE]
 > A new scratch org needs Einstein and Agentforce turned on once in Setup, because Salesforce requires
 > a person to accept the terms.
@@ -465,7 +507,8 @@ The scripts in [Running it from source](#running-it-from-source) do steps 2 to 5
 ## Running it from source
 
 **Prerequisites:** Node 20+, the Salesforce CLI (`npm install -g @salesforce/cli`), an org with
-Agentforce enabled, and an OpenBox organisation API key. Every setting is described in
+Agentforce enabled, and an OpenBox organisation API key with the
+[permissions above](#installation). Every setting is described in
 [`.env.example`](.env.example).
 
 ```bash
@@ -580,5 +623,9 @@ sf package version create --package OpenBoxGovernance --installation-key-bypass 
 │   ├── openbox/                   # provision the agent and its controls, inspect sessions, approvals
 │   ├── salesforce/                # certificate, deploy, endpoints, credential, agent user, org setup
 │   └── e2e/run-live.mjs           # end-to-end suite against a real org and OpenBox
-└── docs/                          # architecture page
+└── LICENSE                        # MIT
 ```
+
+## License
+
+[MIT](LICENSE)
