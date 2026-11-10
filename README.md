@@ -485,13 +485,13 @@ node scripts/salesforce/setup-org.mjs --target-org my-org --skip-deploy
 
 # 5. Agentforce: create the agent user, then publish and activate the reference agent
 node scripts/salesforce/create-agent-user.mjs --target-org my-org
-sf agent publish authoring-bundle --api-name OpenBox_Sales_Agent --target-org my-org --skip-retrieve
-sf agent activate --api-name OpenBox_Sales_Agent --target-org my-org
+node scripts/salesforce/publish-agent.mjs --target-org my-org
 ```
 
-> [!IMPORTANT]
-> Set `default_agent_user` in `reference-agent/.../OpenBox_Sales_Agent.agent` to the username printed
-> by `create-agent-user.mjs` before publishing.
+`publish-agent.mjs` publishes the bundle from a temporary copy of `reference-agent`, so it runs as the
+user `create-agent-user.mjs` saved to `.env` (`SF_AGENT_USERNAME`). Nothing in the repository is edited.
+`sf agent publish authoring-bundle` on its own only searches the default package directory, which is
+`force-app`, and cannot find the reference agent.
 
 <details>
 <summary><b>Another OpenBox environment</b></summary>
@@ -545,6 +545,7 @@ sf package version create --package OpenBoxGovernance --installation-key-bypass 
 | Undelivered events | `OpenBox_Event_Outbox__c` with `Status__c` `Queued` or `Failed` |
 | Change policy | OpenBox dashboard → the agent → Policy |
 | Redeploy | `node scripts/salesforce/deploy.mjs` (pauses and restores the poller schedule) |
+| Republish the reference agent | `node scripts/salesforce/publish-agent.mjs` |
 
 ## Testing
 
