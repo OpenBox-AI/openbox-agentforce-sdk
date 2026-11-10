@@ -1,7 +1,12 @@
 // The OpenBox controls that govern the Agentforce discount action. Kept as data so the
 // provisioning script and the live test suite assert against the same definitions.
 
-// One OpenBox agent per Salesforce org: a second org (e.g. a package test org) sets its own name.
+import { loadEnv } from '../lib/env.mjs';
+
+// One OpenBox agent per Salesforce org: a second org (e.g. a package test org) sets its own name,
+// in its env file or the environment. The env file is loaded here because module imports run
+// before the importing script's own loadEnv().
+loadEnv();
 export const AGENT_NAME = process.env.OPENBOX_AGENT_NAME || 'Agentforce Sales Agent (Salesforce)';
 export const ACTIVITY_LOOKUP = 'OpportunityLookup';
 export const ACTIVITY_UPDATE = 'OpportunityDiscountUpdate';
