@@ -185,8 +185,28 @@ start_agent agent_router:
             with conversationKey = @variables.ob_conversation_key
 ```
 
-Add the same `before_reasoning` and `after_reasoning` blocks, and the same two actions, to every
-subagent. Then add the subagent the router sends refused messages to:
+Add the same two actions, and the same `before_reasoning` and `after_reasoning` blocks, to every
+subagent, with one change: pass the subagent's own name as `subagent`. That is how OpenBox records
+the agent moving between subagents (the `subagent_selected` signal); a blank name sends none:
+
+```yaml
+subagent account_lookup:
+    # ...
+    before_reasoning:
+        run @actions.openbox_govern_message
+            with userInput = @system_variables.user_input
+            with conversationKey = @variables.ob_conversation_key
+            with subagent = "account_lookup"
+            set @variables.ob_conversation_key = @outputs.conversationKey
+            set @variables.ob_allowed = @outputs.allowed
+            set @variables.ob_message = @outputs.message
+        if @variables.ob_allowed == False:
+            transition to @subagent.governance_refused
+```
+
+OpenBox evaluates each message once per turn, however many subagents the turn passes through.
+
+Then add the subagent the router sends refused messages to:
 
 ```yaml
 subagent governance_refused:
@@ -457,6 +477,7 @@ The custom metadata record `OpenBox_Settings__mdt.Default`:
 | `Approval_Poll_Interval_Minutes__c` | `1` | How often the poller checks waiting requests |
 | `Max_Requests_Per_Transaction__c` | `5` | Governed calls allowed in one transaction |
 | `Outbox_Max_Attempts__c` | `5` | Delivery attempts for post-write events |
+| `Session_Idle_Minutes__c` | `60` | Minutes without activity after which a conversation is closed in OpenBox. Values under 5 fall back to 60 |
 | `Identity_Issuer__c` | `https://identity.openbox.ai/realms/openbox` | The one identity issuer Apex trusts |
 | `Workload_Certificate__c` | `OpenBox_Workload` | The certificate that signs workload assertions |
 
